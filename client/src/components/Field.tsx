@@ -4,6 +4,7 @@ import { mulberry32 } from '@gridiron/shared';
 interface FieldProps {
   playResult: any | null;
   ballYardline: number;
+  possessionIdx: 0 | 1;
   isAnimating: boolean;
   onAnimationDone?: () => void;
 }
@@ -80,21 +81,19 @@ function toCanvas(
 export default function Field({
   playResult,
   ballYardline,
+  possessionIdx,
   isAnimating,
   onAnimationDone,
 }: FieldProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
-  // Field is always rendered going right; direction is always +1.
-  const DIRECTION: 1 | -1 = 1;
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    // When playResult becomes null (user clicked Next Play), cancel any in-flight
-    // animation and clear the canvas so the static lineups render fresh.
+    // Cancel any in-flight animation if playResult becomes null
     if (!playResult) {
       if (animationRef.current != null) {
         cancelAnimationFrame(animationRef.current);
@@ -102,12 +101,11 @@ export default function Field({
       }
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
-    drawField(ctx, canvas, ballYardline, DIRECTION);
-    const off = buildOffense();
-    const def = buildDefense();
-    drawPlayerSet(ctx, off, ballYardline, DIRECTION, '#e6edf3');
-    drawPlayerSet(ctx, def, ballYardline, DIRECTION, '#f85149');
-  }, [ballYardline, playResult]);
+    // While a playResult exists, use its direction (captured at snap time).
+    // Otherwise derive from current possession — between-plays view.
+    const direction: 1 | -1 = computeDirection(playResult, possessionIdx);
+    renderStatic(ctx, canvas, ballYardline, direction);
+  }, [ballYardline, playResult, possessionIdx]);
 
   useEffect(() => {
     if (!playResult || !isAnimating) return;
@@ -119,26 +117,28 @@ export default function Field({
     const seed = playResult.seed ?? 1;
     const start = performance.now();
     const duration = 1800;
-    const direction: 1 | -1 = 1;
+    const direction: 1 | -1 = computeDirection(playResult, possessionIdx);
     const animLosYardline = playResult.yardline_before ?? ballYardline;
 
     const animate = (t: number) => {
       const elapsed = t - start;
       const progress = Math.min(1, elapsed / duration);
-      drawField(ctx, canvas, animLosYardline, direction);
-      drawPlay(ctx, canvas, playResult, seed, progress, direction);
+      withMirror(ctx, canvas, direction, () => {
+        drawField(ctx, canvas, animLosYardline, direction);
+        drawPlay(ctx, canvas, playResult, seed, progress, direction);
+      });
       if (progress < 1) {
         animationRef.current = requestAnimationFrame(animate);
       } else {
         animationRef.current = null;
         onAnimationDone?.();
-        // Force an immediate redraw at the new (post-play) ballYardline so the
-        // static lineups appear at the correct spot without waiting for a re-render.
-        drawField(ctx, canvas, ballYardline, DIRECTION);
-        const off = buildOffense();
-        const def = buildDefense();
-        drawPlayerSet(ctx, off, ballYardline, DIRECTION, '#e6edf3');
-        drawPlayerSet(ctx, def, ballYardline, DIRECTION, '#f85149');
+        withMirror(ctx, canvas, direction, () => {
+          drawField(ctx, canvas, ballYardline, direction);
+          const off = buildOffense();
+          const def = buildDefense();
+          drawPlayerSet(ctx, off, ballYardline, direction, '#e6edf3');
+          drawPlayerSet(ctx, def, ballYardline, direction, '#f85149');
+        });
       }
     };
     animationRef.current = requestAnimationFrame(animate);
@@ -155,6 +155,50 @@ export default function Field({
       className="w-full bg-emerald-900 rounded border border-border"
     />
   );
+}
+
+/** Compute the offense direction for the current view:
+ *  - During animation (playResult present): use the play's offense_direction
+ *  - Between plays (no playResult): derive from current possession_idx */
+function computeDirection(playResult: any, possessionIdx: 0 | 1): 1 | -1 {
+  if (playResult?.offense_direction != null) return playResult.offense_direction as 1 | -1;
+  return (possessionIdx === 0 ? 1 : -1) as 1 | -1;
+}
+
+function renderStatic(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  ballYardline: number,
+  direction: 1 | -1,
+) {
+  withMirror(ctx, canvas, direction, () => {
+    drawField(ctx, canvas, ballYardline, direction);
+    const off = buildOffense();
+    const def = buildDefense();
+    drawPlayerSet(ctx, off, ballYardline, direction, '#e6edf3');
+    drawPlayerSet(ctx, def, ballYardline, direction, '#f85149');
+  });
+}
+
+/** Wrap canvas drawing in a horizontal mirror when direction is -1.
+ *  After the wrapped fn runs, the transform is restored. */
+function withMirror(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  direction: 1 | -1,
+  fn: () => void,
+) {
+  if (direction === 1) {
+    ctx.save();
+    fn();
+    ctx.restore();
+    return;
+  }
+  ctx.save();
+  ctx.translate(canvas.width, 0);
+  ctx.scale(-1, 1);
+  fn();
+  ctx.restore();
 }
 
 function drawField(
@@ -193,9 +237,7 @@ function drawField(
   ctx.stroke();
   ctx.setLineDash([]);
   // LOS label — placed on the "behind" side of the LOS (where the offense stands)
-  ctx.fillStyle = '#fde047';
-  ctx.font = 'bold 11px monospace';
-  ctx.fillText('LOS', losX + (direction === 1 ? -28 : 4), 14);
+  drawUprightText(ctx, 'LOS', losX + (direction === 1 ? -28 : 4), 14, 'left', '#fde047');
   // First down marker — 10 yards AHEAD of LOS in direction of attack
   const fdYardline = ballYardline + 10 * direction;
   const fdX = (fdYardline / 100) * w;
@@ -209,8 +251,7 @@ function drawField(
     ctx.stroke();
     ctx.setLineDash([]);
     // 1ST label — placed on the "ahead" side of the marker (further from LOS)
-    ctx.fillStyle = '#fb923c';
-    ctx.fillText('1ST', fdX + (direction === 1 ? 4 : -28), h - 6);
+    drawUprightText(ctx, '1ST', fdX + (direction === 1 ? 4 : -28), h - 6, 'left', '#fb923c');
   }
   // Hash marks
   ctx.strokeStyle = 'rgba(255,255,255,0.25)';
@@ -269,17 +310,40 @@ function drawPlayer(
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
-  // Black outline so dots stand out against the green field
   ctx.strokeStyle = '#000';
   ctx.lineWidth = 1.5;
   ctx.stroke();
-  ctx.fillStyle = '#000';
-  ctx.font = 'bold 9px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, x, y);
-  ctx.textAlign = 'start';
+  drawUprightText(ctx, label, x, y, 'center');
+}
+
+/** Draw text so the glyphs always read left-to-right (not mirrored).
+ *  Uses the current transform for positioning then resets to identity scale so
+ *  the characters themselves aren't flipped. The text position is derived from
+ *  the current matrix; if we're mirrored, the screen position is computed and
+ *  text is drawn in screen orientation. */
+function drawUprightText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  align: 'left' | 'center' = 'left',
+  fillStyle: string = '#000',
+) {
+  const m = ctx.getTransform();
+  // Apply current transform to (x, y) to get the screen-space coordinate.
+  const sx = m.a * x + m.c * y + m.e;
+  const sy = m.b * x + m.d * y + m.f;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0); // reset to identity for clean text
+  ctx.fillStyle = fillStyle;
+  // 9px monospace, bold, by default
+  if (!ctx.font || ctx.font.indexOf('9px') === -1) {
+    ctx.font = 'bold 11px monospace';
+  }
+  ctx.textAlign = align;
   ctx.textBaseline = 'alphabetic';
+  ctx.fillText(text, sx, sy);
+  ctx.restore();
 }
 
 function drawPlay(
@@ -350,35 +414,19 @@ function drawPlay(
   if (result.scoring_event === 'fg' && progress > 0.5) {
     ctx.fillStyle = `rgba(63,185,80,${(progress - 0.5) * 2})`;
     ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 36px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('FIELD GOAL GOOD! +0.5', w / 2, h / 2);
-    ctx.textAlign = 'start';
+    drawUprightText(ctx, 'FIELD GOAL GOOD! +0.5', w / 2, h / 2, 'center', '#fff');
   } else if (result.scoring_event === 'safety' && progress > 0.5) {
     ctx.fillStyle = `rgba(210,153,34,${(progress - 0.5) * 2})`;
     ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 36px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('SAFETY!', w / 2, h / 2);
-    ctx.textAlign = 'start';
+    drawUprightText(ctx, 'SAFETY!', w / 2, h / 2, 'center', '#fff');
   } else if (result.scoring_event === 'td' && progress > 0.5) {
     ctx.fillStyle = `rgba(63,185,80,${(progress - 0.5) * 2})`;
     ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 36px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('TOUCHDOWN!', w / 2, h / 2);
-    ctx.textAlign = 'start';
+    drawUprightText(ctx, 'TOUCHDOWN!', w / 2, h / 2, 'center', '#fff');
   } else if (result.turnover && progress > 0.5) {
     ctx.fillStyle = `rgba(248,81,73,${(progress - 0.5) * 2})`;
     ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 36px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('TURNOVER!', w / 2, h / 2);
-    ctx.textAlign = 'start';
+    drawUprightText(ctx, 'TURNOVER!', w / 2, h / 2, 'center', '#fff');
   }
 }
 

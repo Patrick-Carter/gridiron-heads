@@ -132,14 +132,30 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
       // punt/fg yardage handled by caller (special-case per D11)
       yards = 0;
     } else if (offense_wins) {
-      // Mismatch: 5..25 yds (defense out of position)
-      // Match: 1..15 yds (fair skill roll)
-      const max = parent_match ? 15 : 25;
-      yards = (parent_match ? 1 : 5) + Math.floor(rng() * (max - (parent_match ? 0 : 4)));
+      // Full mismatch → big yards (defense out of position)
+      // Parent-match sub-mismatch → smaller yards (defense had the right idea, wrong detail)
+      // Match → normal fair yards
+      let minGain: number, maxGain: number;
+      if (!parent_match) {
+        minGain = 5;
+        maxGain = 25;
+      } else if (!sub_match) {
+        // Defense correctly identified run/pass but wrong direction/depth — limited gain
+        minGain = 1;
+        maxGain = 8;
+      } else {
+        // Perfect read by defense — small gain
+        minGain = 1;
+        maxGain = 10;
+      }
+      yards = minGain + Math.floor(rng() * (maxGain - minGain + 1));
     } else if (defense_wins) {
-      // Defense stops the play. On mismatch this shouldn't happen, but if it does
+      // Defense stops the play. On full mismatch this shouldn't happen, but if it does
       // (e.g. QB mod flipped the skill), still cap the loss.
-      yards = -(1 + Math.floor(rng() * (parent_match ? 4 : 2)));
+      // Parent-match sub-mismatch: defense stops hard (-1..-4)
+      // Full mismatch: minimal loss (-1..-2)
+      const maxLoss = parent_match ? 4 : 2;
+      yards = -(1 + Math.floor(rng() * maxLoss));
     }
     yards = applyYardsPct(yards, input.qb_off_modifiers, parent);
     // Cap yards at the remaining distance to the goal line so a play can't

@@ -189,7 +189,24 @@ describe('Play resolution', () => {
     expect(succeeded).toBe(true);
   });
 
-  it('parent mismatch rewards offense: average yards are much higher than matched-parent', () => {
+  it('parent match but sub mismatch: yards capped small (1..8)', () => {
+    // Defense correctly read run/pass but wrong sub — should yield limited gain.
+    let found = false;
+    for (let s = 1; s < 200 && !found; s++) {
+      const r = setupReadyToSnapRoom();
+      r.pending_schemes[r.players[0].id] = { parent: 'run', sub: 'inside' };
+      r.pending_schemes[r.players[1].id] = { parent: 'run', sub: 'outside' };
+      const { result } = resolveCurrentPlay(r, s);
+      if (!result.turnover && result.yards > 0) {
+        expect(result.yards).toBeGreaterThanOrEqual(1);
+        expect(result.yards).toBeLessThanOrEqual(10);
+        found = true;
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it('full mismatch rewards offense: average yards are much higher than matched-parent', () => {
     // Same skills. With matching parents, yardage depends on fair roll.
     // With mismatch, the bonus kicks in and average gain should be > matched.
     let matchedTotal = 0;

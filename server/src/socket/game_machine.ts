@@ -305,7 +305,7 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       yards: 0,
       scoring_event: fg.make ? 'fg' : null,
       seed,
-      offense_direction: 1 as 1 | -1,
+      offense_direction: (game.possession_idx === 0 ? 1 : -1) as 1 | -1,
       text_recap: fg.make
         ? `FIELD GOAL IS GOOD! (${fg.total} > ${yards_to_endzone})`
         : `FG missed (${fg.total} ≤ ${yards_to_endzone})`,
@@ -362,7 +362,7 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       yards: punt_yards,
       scoring_event: null,
       seed,
-      offense_direction: 1 as 1 | -1,
+      offense_direction: (game.possession_idx === 0 ? 1 : -1) as 1 | -1,
       text_recap: turnover
         ? `PUNT BLOCKED! Defense takes over.`
         : `Punt of ${punt_yards} yards.`,
@@ -393,8 +393,10 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   // Run/Pass: standard resolvePlay
   const offSkill = offense.off_skill?.skill ?? 60;
   const defSkill = defense.def_skill?.skill ?? 60;
-  // Field is always rendered going right; direction is always +1.
-  const offense_direction: 1 | -1 = 1;
+  // Direction of attack: idx 0 attacks right, idx 1 attacks left.
+  // The Canvas mirrors itself when direction is -1 so the server-side game state
+  // can stay direction-agnostic (yardline always grows toward the target end zone).
+  const offense_direction: 1 | -1 = (game.possession_idx === 0 ? 1 : -1) as 1 | -1;
   const resolve = resolvePlay({
     off_skill: offSkill,
     def_skill: defSkill,
