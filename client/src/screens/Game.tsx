@@ -25,6 +25,8 @@ export default function Game({
   const players = state.players;
   const myIdx = players.findIndex((p) => p.id === meId) as 0 | 1;
   const isOffense = myIdx === game.possession_idx;
+  const opponentId = players.find((p) => p.id !== meId)?.id;
+  const opponentScheme = state.pending_schemes?.[opponentId ?? ''] ?? null;
   const [isAnimating, setIsAnimating] = useState(false);
   const [canReplay, setCanReplay] = useState(false);
 
@@ -99,6 +101,14 @@ export default function Game({
           )}
           {game.phase === 'ready_to_snap' && isOffense && (
             <div className="space-y-3">
+              {opponentScheme && (
+                <div className="bg-err/10 border border-err/40 rounded p-3">
+                  <div className="text-xs text-fg/60">Defense called:</div>
+                  <div className="text-err font-bold">
+                    {opponentScheme.parent.toUpperCase()} {opponentScheme.sub.toUpperCase()}
+                  </div>
+                </div>
+              )}
               <button
                 onClick={() => send(EVENTS.SNAP)}
                 className="w-full bg-ok text-bg font-bold py-3 rounded hover:opacity-90"

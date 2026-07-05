@@ -402,37 +402,61 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   const yardline_before = game.ball_yardline;
   const adv = advanceAfterPlay(game, resolve.yards);
   let scoring_event: 'td' | 'safety' | null = null;
+
+  // Compute new possession + yardline + downs BEFORE mutating the game object.
+  // Default: same offense keeps ball, advance down/distance/yardline from advanceAfterPlay.
+  let next_possession: 0 | 1 = game.possession_idx;
+  let next_yardline = adv.next.ball_yardline;
+  let next_down: 1 | 2 | 3 | 4 = adv.next.down;
+  let next_distance = adv.next.distance;
+  // Whether the ball changed hands (TO, score, turnover-on-downs)
+  let change_of_possession = false;
+
   if (adv.touchdown) {
+    // TD → +1 to offense, opponent takes ball at their 25, fresh 1st & 10
     game.scores = addPoints(game.scores, game.possession_idx, 1);
     scoring_event = 'td';
+    next_possession = game.possession_idx === 0 ? 1 : 0;
+    next_yardline = 25;
+    next_down = 1;
+    next_distance = 10;
+    change_of_possession = true;
   } else if (adv.safety) {
+    // Safety → +0.5 to defense (the tackling team), opponent takes at 25
     game.scores = addPoints(game.scores, game.possession_idx === 0 ? 1 : 0, 0.5);
     scoring_event = 'safety';
-  }
-  // Turnover on downs (no first down reached AND down=4 after)
-  if (!resolve.turnover && resolve.yards < game.distance && game.down === 4) {
-    // turnover on downs at spot
-    game.possession_idx = game.possession_idx === 0 ? 1 : 0;
+    next_possession = game.possession_idx === 0 ? 1 : 0;
+    next_yardline = 25;
+    next_down = 1;
+    next_distance = 10;
+    change_of_possession = true;
   } else if (resolve.turnover) {
-    game.possession_idx = game.possession_idx === 0 ? 1 : 0;
-  } else if (scoring_event) {
-    // After TD or safety, opponent gets ball
-    game.possession_idx = game.possession_idx === 0 ? 1 : 0;
-    game.ball_yardline = 25;
-    game.down = 1;
-    game.distance = 10;
-  } else if (adv.next.down === 1) {
-    // 1st down achieved, stay
+    // Defensive read was correct → possession flips, ball at play's end spot
+    next_possession = game.possession_idx === 0 ? 1 : 0;
+    next_down = 1;
+    next_distance = 10;
+    change_of_possession = true;
+  } else if (game.down === 4 && resolve.yards < game.distance) {
+    // Turnover on downs: failed to convert on 4th
+    next_possession = game.possession_idx === 0 ? 1 : 0;
+    next_down = 1;
+    next_distance = 10;
+    change_of_possession = true;
+  } else {
+    // Normal play: keep offense, apply advanceAfterPlay's down/distance/yardline
+    // (next_down/next_distance/next_yardline already set above)
   }
-  // For non-scoring non-turnover: state already updated by advanceAfterPlay.
-  // For non-turnover 4th down: we just set possession above if needed.
-  // Note: advanceAfterPlay already updated next.down/distance correctly.
+
+  game.ball_yardline = next_yardline;
+  game.down = next_down;
+  game.distance = next_distance;
+  game.possession_idx = next_possession;
 
   const result: PlayResult = {
     down: game.down,
     distance: game.distance,
     yardline_before,
-    yardline_after: adv.next.ball_yardline,
+    yardline_after: game.ball_yardline,
     off_call: off_play,
     def_call: def_play,
     off_audible,
@@ -440,11 +464,11 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     off_fake_audible,
     parent_match: resolve.parent_match,
     sub_match: resolve.sub_match,
-    turnover: resolve.turnover,
+    turnover: resolve.turnover || change_of_possession,
     yards: resolve.yards,
     scoring_event,
     seed,
-    text_recap: recapText(resolve, scoring_event),
+    text_recap: recapText(resolve, scoring_event, game.down, game.distance),
   };
   clearAudibles(game);
   clearSchemes(room);
@@ -456,10 +480,15 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   return { result, scoring_event };
 }
 
-function recapText(r: ReturnType<typeof resolvePlay>, scoring: 'td' | 'safety' | null): string {
+function recapText(
+  r: ReturnType<typeof resolvePlay>,
+  scoring: 'td' | 'safety' | null,
+  next_down: 1 | 2 | 3 | 4,
+  next_distance: number,
+): string {
   if (scoring === 'td') return `TOUCHDOWN! ${r.yards} yards.`;
   if (scoring === 'safety') return `SAFETY! Loss of ${Math.abs(r.yards)} yards.`;
-  if (r.turnover) return `TURNOVER! (parent+sub read correct)`;
+  if (r.turnover) return `TURNOVER! (defense read it)`;
   if (r.yards > 0) return `Gain of ${r.yards}.`;
   if (r.yards < 0) return `Loss of ${Math.abs(r.yards)}.`;
   return `No gain.`;
