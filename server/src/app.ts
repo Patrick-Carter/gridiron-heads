@@ -30,6 +30,13 @@ export function createApp(opts: CreateAppOpts = {}): Express {
   const clientDist = path.resolve(__dirname, '../../client/dist');
   app.use(express.static(clientDist, { fallthrough: true }));
 
+  // SPA fallback — any non-API GET that didn't hit a static file returns
+  // index.html so the React Router catch-all can resolve the route.
+  // Without this, shareable URLs like /join/<id> 404 in production.
+  app.get(/^(?!\/api|\/healthz|\/socket\.io).*/, (_req, res) => {
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+
   return app;
 }
 

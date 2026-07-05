@@ -12,3 +12,5 @@ coverage/
 .vite/*.tsbuildinfo
 
 .hermes/
+screenshots/
+server/data/_smoke_tmp.db*
