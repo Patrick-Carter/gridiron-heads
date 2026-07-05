@@ -181,7 +181,8 @@ describe('Play resolution', () => {
       if (!result.turnover && result.yards < r.game!.distance && r.game!.down === 2) {
         succeeded = true;
         expect(r.game!.down).toBe(2);
-        expect(r.game!.distance).toBeLessThanOrEqual(10);
+        // distance should be 10 + |yards| for a loss, or 10 - yards for a small gain
+        expect(r.game!.distance).toBeGreaterThanOrEqual(1);
       }
     }
     expect(succeeded).toBe(true);

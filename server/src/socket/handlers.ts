@@ -71,13 +71,16 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       sdata.session_id = session_id;
       sdata.player_id = player_id;
       socket.join(`session:${session_id}`);
-      // Add player if not present
-      if (!room.players.find((p) => p.id === player_id)) {
+      // Add player if not present (or update name if display_name provided and player exists)
+      const existing = room.players.find((p) => p.id === player_id);
+      if (!existing) {
         const result = addPlayer(room, player_id, display_name);
         if (!result.ok) {
           socket.emit('session:error', { error: result.reason });
           return;
         }
+      } else if (display_name && display_name !== existing.name) {
+        existing.name = display_name;
       }
       io.to(`session:${session_id}`).emit('session:state', snapshot(room));
     });

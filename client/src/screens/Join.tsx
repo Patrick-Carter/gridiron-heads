@@ -16,6 +16,7 @@ export default function Join() {
     try {
       const r = await joinSession(sessionId.trim(), name.trim());
       localStorage.setItem(`gridiron:player_id:${sessionId.trim()}`, r.player_id);
+      localStorage.setItem(`gridiron:player_name:${sessionId.trim()}`, name.trim());
       navigate(`/session/${sessionId.trim()}`);
     } catch (err) {
       alert((err as Error).message);

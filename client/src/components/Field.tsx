@@ -68,7 +68,12 @@ export default function Field({ playResult, ballYardline, isAnimating, onAnimati
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    drawStatic(ctx, canvas, ballYardline);
+    // Between plays: draw field + static lineups
+    drawField(ctx, canvas, ballYardline);
+    const off = buildLineup(ballYardline, 'offense');
+    const def = buildLineup(ballYardline, 'defense');
+    drawPlayerSet(ctx, off, canvas.width, canvas.height, '#e6edf3');
+    drawPlayerSet(ctx, def, canvas.width, canvas.height, '#f85149');
   }, [ballYardline]);
 
   useEffect(() => {
@@ -85,7 +90,8 @@ export default function Field({ playResult, ballYardline, isAnimating, onAnimati
     const animate = (t: number) => {
       const elapsed = t - start;
       const progress = Math.min(1, elapsed / duration);
-      drawStatic(ctx, canvas, ballYardline);
+      // During animation: draw field WITHOUT lineups, then overlay animated lineups
+      drawField(ctx, canvas, ballYardline);
       drawPlay(ctx, canvas, playResult, seed, progress);
       if (progress < 1) {
         animationRef.current = requestAnimationFrame(animate);
@@ -110,7 +116,7 @@ export default function Field({ playResult, ballYardline, isAnimating, onAnimati
   );
 }
 
-function drawStatic(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, ballYardline: number) {
+function drawField(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, ballYardline: number) {
   const w = canvas.width;
   const h = canvas.height;
   // Field background
@@ -157,7 +163,7 @@ function drawStatic(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, ba
     ctx.fillStyle = '#fb923c';
     ctx.fillText('1ST', fdX - 22, h - 6);
   }
-  // Hash marks (top + bottom)
+  // Hash marks (top + bottom) — drawn here so they're visible during animation too
   ctx.strokeStyle = 'rgba(255,255,255,0.25)';
   ctx.lineWidth = 1;
   for (let i = 0; i <= 10; i++) {
@@ -171,11 +177,8 @@ function drawStatic(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, ba
     ctx.lineTo(x, h * 0.68);
     ctx.stroke();
   }
-  // Static lineups — offense left of LOS, defense right of LOS
-  const off = buildLineup(ballYardline, 'offense');
-  const def = buildLineup(ballYardline, 'defense');
-  drawPlayerSet(ctx, off, w, h, '#e6edf3');
-  drawPlayerSet(ctx, def, w, h, '#f85149');
+  // NOTE: lineups are drawn separately by the caller (either static via useEffect,
+  // or animated overlays via drawPlay during animation).
 }
 
 function drawPlayerSet(ctx: CanvasRenderingContext2D, lineup: Lineup, w: number, h: number, color: string) {

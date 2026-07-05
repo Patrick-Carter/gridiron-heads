@@ -15,6 +15,7 @@ export default function Create() {
       const r = await createSession(name.trim());
       // persist player_id so Lobby can use it after refresh
       localStorage.setItem(`gridiron:player_id:${r.session_id}`, r.player_id);
+      localStorage.setItem(`gridiron:player_name:${r.session_id}`, name.trim());
       navigate(`/session/${r.session_id}`);
     } catch (err) {
       alert((err as Error).message);

@@ -20,7 +20,7 @@ export interface PlayResultMsg {
   result: any;
 }
 
-export function useSession(session_id: string, player_id: string) {
+export function useSession(session_id: string, player_id: string, display_name: string = '') {
   const [state, setState] = useState<SessionSnapshot | null>(null);
   const [lastPlayResult, setLastPlayResult] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +33,7 @@ export function useSession(session_id: string, player_id: string) {
 
     const onConnect = () => {
       setConnected(true);
-      sock.emit(EVENTS.SESSION_JOIN, { session_id, player_id, display_name: '' });
+      sock.emit(EVENTS.SESSION_JOIN, { session_id, player_id, display_name });
     };
     const onDisconnect = () => setConnected(false);
     const onState = (snap: SessionSnapshot) => {

@@ -39,8 +39,8 @@ export function advanceAfterPlay(state: GameState, yards: number): AdvanceResult
     next.distance = 10;
   } else {
     next.down = Math.min(4, state.down + 1) as 1 | 2 | 3 | 4;
-    // Negative yards don't reduce distance — you still need the same yards for a 1st
-    next.distance = yards < 0 ? state.distance : state.distance - yards;
+    // Positive yards reduce distance; negative yards increase it
+    next.distance = Math.max(1, state.distance - yards);
   }
 
   let touchdown = false;

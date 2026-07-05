@@ -97,6 +97,32 @@ describe('advanceAfterPlay', () => {
     expect(next.ball_yardline).toBe(60);
   });
 
+  it('loss of 3 on 2nd & 10 → 3rd & 13 (distance increases)', () => {
+    const g: GameState = {
+      ...newGameState('s', emptyTeams()),
+      down: 2,
+      distance: 10,
+      ball_yardline: 50,
+    };
+    const { next } = advanceAfterPlay(g, -3);
+    expect(next.down).toBe(3);
+    expect(next.distance).toBe(13);
+    expect(next.ball_yardline).toBe(47);
+  });
+
+  it('gain of 3 on 2nd & 10 → 3rd & 7 (distance decreases)', () => {
+    const g: GameState = {
+      ...newGameState('s', emptyTeams()),
+      down: 2,
+      distance: 10,
+      ball_yardline: 50,
+    };
+    const { next } = advanceAfterPlay(g, 3);
+    expect(next.down).toBe(3);
+    expect(next.distance).toBe(7);
+    expect(next.ball_yardline).toBe(53);
+  });
+
   it('does not mutate input state', () => {
     const g = newGameState('s', emptyTeams());
     const originalYardline = g.ball_yardline;

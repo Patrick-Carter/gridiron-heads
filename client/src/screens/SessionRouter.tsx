@@ -10,6 +10,7 @@ export default function SessionRouter() {
   const { id } = useParams<{ id: string }>();
   if (!id) return <div>Missing session id</div>;
   const playerId = localStorage.getItem(`gridiron:player_id:${id}`);
+  const playerName = localStorage.getItem(`gridiron:player_name:${id}`) ?? '';
   if (!playerId) {
     return (
       <div className="p-8 text-fg">
@@ -17,13 +18,14 @@ export default function SessionRouter() {
       </div>
     );
   }
-  return <SessionInner sessionId={id} playerId={playerId} />;
+  return <SessionInner sessionId={id} playerId={playerId} playerName={playerName} />;
 }
 
-function SessionInner({ sessionId, playerId }: { sessionId: string; playerId: string }) {
+function SessionInner({ sessionId, playerId, playerName }: { sessionId: string; playerId: string; playerName: string }) {
   const { state, me, lastPlayResult, error, connected, send, setLastPlayResult } = useSession(
     sessionId,
     playerId,
+    playerName,
   );
 
   if (!state) {
