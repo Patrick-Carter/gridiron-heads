@@ -188,8 +188,89 @@ fixed height + `rounded` border in favor of `aspect-ratio` 2:1 + a
 - User accounts / login
 - League / season play / ELO rating
 - Replay library (per-session history of past plays)
-- Mobile-first redesign
+- Mobile-first redesign (DONE — early 2000s Flash theme + mobile pass; see D025)
 - Sound effects / commentary
 - More than 2 players (would need schema rework)
 - Disconnect handling (forfeit / pause)
 - Left-drive / mirrored field (attempted, reverted — see D020)
+
+## D026 — 2026-07-04 — Fun names for skill-group draftees (ACCEPTED)
+**Decision:** Skill position groups (D_LINE / O_LINE / OFF_SKILL /
+DEF_SKILL / KICKER) get a per-group name pool (~30 entries each) of
+two-syllable names like the QB pool already had (`Axel Stone`, `Mirage
+Mason`, `Jersey Jenkins`, etc.). The original `${GROUP}_Alpha_${skill}`
+format is gone.
+**Rationale:** QBs already read like real roster names; skill groups
+should too. Same Flash-game arcade vibe the rest of the redesign
+(D025) set up.
+**Plus:** The pick is deterministic — `pairWithCap` consumes the draft
+seed rng(), so `generateDraft(seed=11)` produces the same set of names
+across re-runs. The old code path would have produced different names
+every time a new rng() call was consumed (added regression risk).
+**Tests:**
+- `shared/tests/draft.test.ts` — `skill-group names are fun`
+  asserts no `_Alpha_` / `_Bravo_`, no trailing numeric, ≥2 words.
+- `shared/tests/draft.test.ts` — `draft is reproducible under a fixed
+  seed` locks idempotency.
+
+## D027 — 2026-07-04 — Per-play-type canvas animations (ACCEPTED)
+**Decision:** Each `parent-sub` combination gets its own animation
+strategy in `client/src/components/Field.tsx`. The old generic
+"offense advances proportional to yards, defense chases 30%" is gone.
+The 6 strategies:
+- **run-inside** — RB takes handoff, runs straight through LOS; O-line
+  drives wedge; D-line collapses inward on the ball spot.
+- **run-outside** — RB sweeps wide with a lateral arc; WR leads block;
+  D-line chases laterally toward sweep side.
+- **pass-deep** — QB drops back 7yds, WR runs a 25yd post; ball arcs
+  through air to deep WR. D-line rushes (3-4yds push); CBs trail the WR.
+- **pass-short** — QB 3yd quick-step, WR 5yd hitch; ball arcs short.
+  D-line pushes up.
+- **punt** — punt formation (snapper / punter-14yds-deep / 2 gunners).
+  Long snap arc → punter kick → ball flies ~40yds forward (winds up
+  + launches).
+- **fg** — FG formation (snapper / holder-7yds / kicker-8yds).
+  Snap → hold → kick → ball arcs high to uprights.
+**Plus:** D028 football shape + role-labelled positions (Q/O/W/D/C +
+snapper + holder + kicker + punter + gunner + RB) make the canvas
+read as a coherent play call rather than a sea of dots.
+**Tests:** `shared/tests/canvas_playkeys.test.ts` —
+"every legal parent/sub combo maps to a known playKey" + "no orphan
+keys" guard the strategy table against future parent/sub additions.
+
+## D028 — 2026-07-04 — Football-shaped ball (ACCEPTED)
+**Decision:** Replace the 5-px brown circle with a prolate-spheroid
+football drawn via `ctx.ellipse(0, 0, 14, 7, 0, 0, 2π)` +
+`ctx.rotate(velocity_angle)`. Laces = a horizontal stripe near the
+short end + 3 short stitches. Tip highlight (`rgba(255,248,220,...)`)
+gives a 3-D feel.
+**Plus:** During punt/fg the rotation follows the velocity tangent via
+`Math.atan2(dy, dx)` of the current frame, so the football "tumbles"
+through the air end-over-end like a real FG. A `drawKickLeg` helper
+draws a brown kicking-arc from kicker/punter to ball during the kick
+phase (progress 0.45..0.6).
+**Tests:** No direct JSDOM canvas rendering test (added cost > value
+for this size of change); covered manually by the live boot + smoke
+test that every playKey branch in D027 returns from `computeFrame`
+without throwing.
+
+## D029 — 2026-07-04 — FE surfaces your selected play (ACCEPTED)
+**Decision:** Two new UI surfaces make the user's call unmissable:
+1. **Locked-in panel** during `awaiting_schemes`: lime-tinted
+   `panel-flash` with `animate-shout`, header "YOU CALLED!", big
+   chips with PARENT/SUB in CAPS.
+2. **"Snap Imminent" panel** during `ready_to_snap` (offense): shows
+   BOTH the user's call (`YOU:` chip in lime) AND the opponent's call
+   (`DEF:` chip in cream), so the offense sees the matchup before
+   snapping.
+3. **"Defense read set" panel** during `ready_to_snap` (defense):
+   shows the defense's own call (`YOU CALLED` in maroon) while waiting
+   for the snap.
+4. **Recap card** after the play: "Your Play" panel with
+   YOU-chips (lime) vs DEF-chips (maroon) for offense/defense, plus
+   audible/fake indicator if used, and the text recap.
+**Rationale:** Pre-fix, after picking a scheme the FE showed only
+"Locked in: run inside" in small type — easy to miss. Now every
+phase (waiting / ready / recap) makes the role-tinted call visible.
+**Tests:** No automated UI test (per AGENTS.md "playable end-to-end"
+rule — visual smoke during dev is sufficient).

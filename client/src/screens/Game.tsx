@@ -89,9 +89,23 @@ export default function Game({
           </div>
 
           {lastPlayResult && !isAnimating && (
-            <div className="panel-flash text-base font-bold text-center">
-              <span className="sticker mr-2">PLAY!</span>
-              {lastPlayResult.text_recap}
+            <div className="panel-flash text-base text-center space-y-2">
+              <div className="panel-titlebar !mt-0"><span>Your Play</span><span className="text-xs">Recap</span></div>
+              {/* Offense vs defense call summary (D029) */}
+              <div className="flex items-center justify-center gap-2 text-base">
+                <span className="chip !bg-lime">YOU: {lastPlayResult.off_call?.parent?.toUpperCase()} {lastPlayResult.off_call?.sub?.toUpperCase()}</span>
+                <span className="text-ink/60 font-black">vs</span>
+                <span className="chip !bg-maroon !text-cream">DEF: {lastPlayResult.def_call?.parent?.toUpperCase()} {lastPlayResult.def_call?.sub?.toUpperCase()}</span>
+              </div>
+              {(lastPlayResult.off_audible || lastPlayResult.off_fake_audible) && (
+                <div className="text-xs font-bold text-maroon">
+                  🗣 {lastPlayResult.off_fake_audible ? 'FAKE' : 'AUDIBLE →'} {lastPlayResult.off_audible?.sub?.toUpperCase?.() || ''}
+                </div>
+              )}
+              <div className="text-sm font-bold">
+                <span className="sticker mr-2">PLAY!</span>
+                {lastPlayResult.text_recap}
+              </div>
             </div>
           )}
         </div>
@@ -104,24 +118,30 @@ export default function Game({
             />
           )}
           {game.phase === 'awaiting_schemes' && pendingMyScheme && (
-            <div className="panel-flash text-center space-y-2">
-              <div className="panel-titlebar !mt-0"><span>Locked In!</span><span className="text-xs">Waiting…</span></div>
-              <div className="text-xl font-bold">
-                <span className="chip">{pendingMyScheme.parent}</span>{' '}
-                <span className="chip">{pendingMyScheme.sub}</span>
+            <div className="panel-flash !bg-lime text-center space-y-2 animate-shout">
+              <div className="panel-titlebar !mt-0"><span>YOU CALLED!</span><span className="text-xs">Locked</span></div>
+              <div className="text-2xl font-black">
+                <span className="chip">{pendingMyScheme.parent.toUpperCase()}</span>{' '}
+                <span className="chip">{pendingMyScheme.sub.toUpperCase()}</span>
               </div>
-              <div className="text-sm text-ink/70">Waiting for opponent…</div>
+              <div className="text-sm font-bold text-ink/80">
+                ⏳ Waiting for opponent to lock in…
+              </div>
             </div>
           )}
 
           {game.phase === 'ready_to_snap' && isOffense && (
             <div className="space-y-3">
               {opponentScheme && (
-                <div className="panel-flash text-center"
+                <div className="panel-flash text-center space-y-2"
                      style={{ background: '#c8102e', color: '#fff8dc' }}>
-                  <div className="text-xs uppercase font-bold mb-1">Defense called:</div>
-                  <div className="text-xl font-bold">
-                    {opponentScheme.parent.toUpperCase()} {opponentScheme.sub.toUpperCase()}
+                  <div className="panel-titlebar !mt-0" style={{ background: '#fde047', color: '#0a0a18', borderColor: '#0a0a18' }}>
+                    <span>Snap Imminent!</span><span className="text-xs">Read set</span>
+                  </div>
+                  <div className="flex items-center justify-center gap-2 text-base flex-wrap">
+                    <span className="chip !bg-lime !text-ink">YOU: {pendingMyScheme?.parent?.toUpperCase()} {pendingMyScheme?.sub?.toUpperCase()}</span>
+                    <span className="font-black">vs</span>
+                    <span className="chip !bg-cream !text-ink">DEF: {opponentScheme.parent.toUpperCase()} {opponentScheme.sub.toUpperCase()}</span>
                   </div>
                 </div>
               )}
@@ -144,8 +164,18 @@ export default function Game({
           )}
 
           {game.phase === 'ready_to_snap' && !isOffense && (
-            <div className="panel-flash text-center animate-pulse">
-              <div className="text-xl">🏈 Offense snapping…</div>
+            <div className="panel-flash text-center space-y-2 animate-pulse">
+              <div className="panel-titlebar !mt-0"><span>Defense read set</span><span className="text-xs">Snap!</span></div>
+              <div className="text-xs font-bold">YOU CALLED</div>
+              <div className="text-2xl font-black">
+                {pendingMyScheme && (
+                  <>
+                    <span className="chip !bg-maroon !text-cream">{pendingMyScheme.parent.toUpperCase()}</span>{' '}
+                    <span className="chip !bg-maroon !text-cream">{pendingMyScheme.sub.toUpperCase()}</span>
+                  </>
+                )}
+              </div>
+              <div className="text-base">🏈 Offense snapping…</div>
             </div>
           )}
 

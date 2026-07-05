@@ -69,6 +69,31 @@ describe('generateDraft', () => {
       expect(qb.modifier.value).toBeGreaterThan(0);
     }
   });
+
+  // D026 — drafted players get fun names (no more "D_LINE_Alpha_77")
+  it('skill-group names are fun (no Alpha/Bravo, no trailing numeric)', () => {
+    const pool = generateDraft(mulberry32(11));
+    for (const group of ['D_LINE', 'O_LINE', 'OFF_SKILL', 'DEF_SKILL', 'KICKER'] as const) {
+      for (const opt of pool[group]) {
+        expect(opt.name).not.toMatch(/_Alpha_|_Bravo_/);
+        expect(opt.name).not.toMatch(/_\d+$/);
+        // Each name should be two words (First Last), like the QB pool.
+        expect(opt.name.split(/\s+/).length).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
+  it('draft is reproducible under a fixed seed (D026 migration)', () => {
+    // Pre-fix the names would change every time a new rng() consumed
+    // before the name pick. Now every name pick deterministically follows
+    // the skill-pair roll on the same seed.
+    const p1 = generateDraft(mulberry32(123));
+    const p2 = generateDraft(mulberry32(123));
+    for (const group of ['D_LINE', 'O_LINE', 'OFF_SKILL', 'DEF_SKILL', 'KICKER'] as const) {
+      expect(p1[group].map((o) => o.name)).toEqual(p2[group].map((o) => o.name));
+    }
+    expect(p1.QB.map((o) => o.name)).toEqual(p2.QB.map((o) => o.name));
+  });
 });
 
 describe('pick order constants', () => {

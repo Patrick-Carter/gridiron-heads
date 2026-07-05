@@ -6,6 +6,7 @@ import type {
   TeamState,
 } from './types.js';
 import { drawQBs } from './qb_pool.js';
+import { pickName } from './name_pools.js';
 
 const SKILL_GROUPS: PositionGroup[] = ['D_LINE', 'O_LINE', 'OFF_SKILL', 'DEF_SKILL', 'KICKER'];
 
@@ -14,7 +15,17 @@ function rollSkill(rng: () => number): number {
   return 50 + Math.floor(rng() * 51); // 50..100 inclusive
 }
 
-/** Generate a pair of skill options within 25% gap. */
+/** Slug for an option id; spaces→underscores so it stays filesystem/url-safe.
+ *  Includes the attempt counter so the same name picked twice in a draft
+ *  (rare, since the pool is consumed index-by-index, but possible) gets
+ *  distinct ids. */
+function nameSlug(name: string, group: PositionGroup, attempt: number): string {
+  return `${group}_${name.replace(/\s+/g, '_')}_${attempt}`;
+}
+
+/** Generate a pair of skill options within 25% gap. Names come from the
+ *  group-specific fun-name pool (D026) — drawn deterministically so the
+ *  draft_seed fully determines who shows up. */
 function pairWithCap(
   rng: () => number,
   group: PositionGroup,
@@ -25,11 +36,14 @@ function pairWithCap(
     const lo = Math.min(a, b);
     const hi = Math.max(a, b);
     if (hi === 0 || (hi - lo) / hi <= 0.25) {
-      const nameA = `${group}_Alpha_${a}`;
-      const nameB = `${group}_Bravo_${b}`;
+      // Two distractor rng() calls so the names are tied to the slot, not
+      // the skill pair — keeps draft seed reproducible even if the skill
+      // pair regenerates across iterations of the outer loop.
+      const nameA = pickName(rng, group);
+      const nameB = pickName(rng, group);
       return [
-        { id: `${group}_A_${a}_${attempt}`, group, skill: a, name: nameA },
-        { id: `${group}_B_${b}_${attempt}`, group, skill: b, name: nameB },
+        { id: nameSlug(nameA, group, attempt * 2),     group, skill: a, name: nameA },
+        { id: nameSlug(nameB, group, attempt * 2 + 1), group, skill: b, name: nameB },
       ];
     }
   }

@@ -10,3 +10,5 @@ server/dist/
 shared/dist/
 coverage/
 .vite/*.tsbuildinfo
+
+.hermes/
