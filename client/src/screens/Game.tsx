@@ -7,6 +7,7 @@ import ScorePanel from '../components/ScorePanel.js';
 
 import RosterModal from '../components/RosterModal.js';
 import ResultsPanel from '../components/ResultsPanel.js';
+import HistoryPanel from '../components/HistoryPanel.js';
 import ReplayScrubber from '../components/ReplayScrubber.js';
 import TdConfetti from '../components/TdConfetti.js';
 import {
@@ -138,67 +139,63 @@ export default function Game({
   const rosterTeamName = rosterIdx !== null ? players[rosterIdx]?.name ?? '?' : '';
 
   return (
-    <div className="min-h-full p-3 md:p-4 max-w-6xl mx-auto">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
-        {/* Left: Field + Score */}
-        <div className="lg:col-span-2 space-y-3">
-          <ScorePanel
-            scores={game.scores}
-            myIdx={myIdx}
-            players={players}
-            possessionIdx={game.possession_idx}
-            down={game.down}
-            distance={game.distance}
-            ballYardline={game.ball_yardline}
-            offenseDirection={game.possession_idx === 0 ? 1 : -1}
-            onOpenRoster={setRosterIdx}
-          />
+    <div className="min-h-full p-3 md:p-4 max-w-6xl mx-auto space-y-3 md:space-y-4">
+      <ScorePanel
+        scores={game.scores}
+        myIdx={myIdx}
+        players={players}
+        possessionIdx={game.possession_idx}
+        down={game.down}
+        distance={game.distance}
+        ballYardline={game.ball_yardline}
+        offenseDirection={game.possession_idx === 0 ? 1 : -1}
+        onOpenRoster={setRosterIdx}
+      />
 
-          <div className="field-frame">
-            <Field
-              playResult={lastPlayResult}
-              ballYardline={game.ball_yardline}
-              offenseDirection={game.possession_idx === 0 ? 1 : -1}
-              isAnimating={isAnimating}
-              onAnimationDone={handleAnimationDone}
-              homeName={players[0]?.name ?? 'HOME'}
-              awayName={players[1]?.name ?? 'AWAY'}
-              homeScore={game.scores[0]}
-              awayScore={game.scores[1]}
-              down={game.down}
-              distance={game.distance}
-              scrubProgress={scrubProgress}
-              onProgress={(p) => {
-                // Throttle React updates: only commit state every ~30ms
-                const now = performance.now();
-                if (now - (animProgressRef as any)._lastCommit > 30 || p >= 1) {
-                  animProgressRef.current = p;
-                  setAnimProgress(p);
-                  (animProgressRef as any)._lastCommit = now;
-                }
-              }}
-            />
-          </div>
+      <div className="field-frame">
+        <Field
+          playResult={lastPlayResult}
+          ballYardline={game.ball_yardline}
+          offenseDirection={game.possession_idx === 0 ? 1 : -1}
+          isAnimating={isAnimating}
+          onAnimationDone={handleAnimationDone}
+          homeName={players[0]?.name ?? 'HOME'}
+          awayName={players[1]?.name ?? 'AWAY'}
+          homeScore={game.scores[0]}
+          awayScore={game.scores[1]}
+          down={game.down}
+          distance={game.distance}
+          scrubProgress={scrubProgress}
+          onProgress={(p) => {
+            // Throttle React updates: only commit state every ~30ms
+            const now = performance.now();
+            if (now - (animProgressRef as any)._lastCommit > 30 || p >= 1) {
+              animProgressRef.current = p;
+              setAnimProgress(p);
+              (animProgressRef as any)._lastCommit = now;
+            }
+          }}
+        />
+      </div>
 
-          {/* Phase 4: results panel below the field. Top section shows the
-              current play's matchup rectangles + result (animated). Bottom
-              section is a scrollable list of the prior plays. */}
-          <ResultsPanel
-            playResult={lastPlayResult}
-            progress={isAnimating ? animProgress : null}
-            history={game.history || []}
-          />
+      {/* Phase 6: replay scrubber — frame-step the last play. Desktop only;
+          it's a niche debug-style control and there isn't room for the slider
+          on a phone layout below the canvas. */}
+      <div className="hidden md:block">
+        <ReplayScrubber
+          playResult={lastPlayResult}
+          isAnimating={isAnimating}
+          scrubProgress={scrubProgress}
+          setScrubProgress={setScrubProgress}
+        />
+      </div>
 
-          {/* Phase 6: replay scrubber — frame-step the last play. */}
-          <ReplayScrubber
-            playResult={lastPlayResult}
-            isAnimating={isAnimating}
-            scrubProgress={scrubProgress}
-            setScrubProgress={setScrubProgress}
-          />
-        </div>
-
-        {/* Right: Controls + Log */}
+      {/* Below canvas: 2-col on md+, stacked on mobile. Left column is the
+          phase-based play call panel (SchemePicker / Snap / audibles). Right
+          column is the results + rolls matchup rectangles. On mobile, the
+          play call panel comes first, then the results, per layout spec. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+        {/* Left: phase-based play call controls */}
         <div className="space-y-3">
           {game.phase === 'awaiting_schemes' && !pendingMyScheme && (
             <SchemePicker
@@ -304,9 +301,22 @@ export default function Game({
               ⏱ Next play in ~2.5s
             </div>
           )}
+        </div>
 
-          </div>
+        {/* Right: results + rolls (matchup rectangles + verdict + result card) */}
+        <div>
+          <ResultsPanel
+            playResult={lastPlayResult}
+            progress={isAnimating ? animProgress : null}
+          />
+        </div>
       </div>
+
+      {/* History — scrollable list of recent plays, full width. */}
+      <HistoryPanel
+        playResult={lastPlayResult}
+        history={game.history || []}
+      />
 
       {/* Roster overlay — D031: click a player name to inspect their team's
           6-group roster. Dismiss with ESC / X / backdrop click, or flip to

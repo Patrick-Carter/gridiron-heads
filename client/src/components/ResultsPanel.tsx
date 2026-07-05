@@ -1,8 +1,7 @@
-// ResultsPanel — unified roll display + history list below the field.
+// ResultsPanel — matchup rectangles + verdict + result card.
 //
-// Replaces the old RollReveal (4 individual flip-cards) + PlayLog (right
-// sidebar) with a single panel:
-//
+// Sits in the right column of the 2-col section below the canvas, next to
+// the play call panel. Renders:
 //   ┌─ Skill matchup rect ─┐  ┌─ Line matchup rect ─┐
 //   │ OFF 28/64 < DEF 47/70│  │ O-LINE 72/99 > D-LINE 54/84 │
 //   └──────────────────────┘  └──────────────────────────┘
@@ -11,30 +10,20 @@
 //   │ +8 YDS · Gain of 8.            │
 //   └────────────────────────────────┘
 //
-//   ── HISTORY (scrollable, last 5) ──
-//   ▶ LAST PLAY  2nd & 8 · OWN 45
-//         OFF RUN INSIDE  vs  DEF RUN INSIDE
-//         PLAY!  text_recap  +8 yds
-//   Play #N  1st & 10 · OPP 32
-//         ...
-//
 // FG and punt plays skip the LINE rectangle (no line roll happens) and
 // adapt the SKILL rectangle to show FG power+bonus vs YTG / punt yardage.
-// History rows exclude the current play (it's already shown at the top via
-// the rectangles + result, no duplication).
+//
+// The scrollable history list that used to live at the bottom of this panel
+// has been extracted into its own component (`HistoryPanel.tsx`), placed in
+// a full-width row below this 2-col section on desktop (and below the
+// results+rolls row on mobile).
 
 import type { PlayResult } from '@gridiron/shared';
-import { ballSpotAt } from '@gridiron/shared';
 
 interface ResultsPanelProps {
   playResult: PlayResult | null;
   /** Animation progress 0..1. Drives reveal timing. null = static (between plays). */
   progress: number | null;
-  /** Full game history from the server. Newest entries are at the end. */
-  history?: PlayResult[];
-  /** How many prior plays to show in the scrollable list (default 5 — includes
-   *  the current play as the last entry if it's not already shown above). */
-  historyCap?: number;
 }
 
 // Tailwind-style classes (defined in globals.css .panel-flash family — no new CSS needed)
@@ -83,16 +72,6 @@ function toneClass(tone: 'good' | 'bad' | 'neutral'): string {
   if (tone === 'good') return 'text-ok font-black';
   if (tone === 'bad') return 'text-maroon font-black';
   return 'text-ink font-bold';
-}
-
-function downLabel(d: number): string {
-  return d === 1 ? '1st' : d === 2 ? '2nd' : d === 3 ? '3rd' : '4th';
-}
-
-function spotForPlay(p: PlayResult): string {
-  const spot = ballSpotAt(p.yardline_before, p.offense_direction);
-  if (spot.label === null) return 'at 50';
-  return `${spot.label.toLowerCase()} ${spot.yards}`;
 }
 
 // === Matchup rectangles ====================================================
@@ -250,92 +229,12 @@ function ResultCard({ p, visible }: { p: PlayResult; visible: boolean }) {
   );
 }
 
-// === History row ===========================================================
-
-function HistoryRow({ p, isLast }: { p: PlayResult; isLast: boolean }) {
-  const yards = p.yards;
-  const yardsColor =
-    yards > 0 ? 'text-ok' : yards < 0 ? 'text-maroon' : 'text-ink/70';
-  const yardsStr =
-    yards > 0 ? `+${yards}` : yards < 0 ? `${yards}` : '0';
-  return (
-    <li
-      data-testid={isLast ? 'last-play' : undefined}
-      className={`border-4 p-2 space-y-1 text-center transition-all ${
-        isLast ? 'bg-lime' : 'bg-cream'
-      }`}
-      style={{
-        borderColor: '#0a0a18',
-        boxShadow: isLast ? '3px 3px 0 0 #c8ff00' : '3px 3px 0 0 #0a0a18',
-      }}
-    >
-      <div className="panel-titlebar !mt-0" style={{ padding: '2px 6px' }}>
-        <span className="text-[11px]">
-          {isLast ? '▶ LAST PLAY' : 'PLAY'}
-        </span>
-        <span className="text-[10px]">
-          {downLabel(p.down)} & {p.distance} · {spotForPlay(p)}
-        </span>
-      </div>
-
-      <div className="flex items-center justify-center gap-2 text-sm flex-wrap">
-        <span className="chip !bg-lime !text-ink">
-          OFF: {p.off_call?.parent?.toUpperCase()} {p.off_call?.sub?.toUpperCase()}
-        </span>
-        <span className="text-ink/60 font-black">vs</span>
-        <span className="chip !bg-maroon !text-cream">
-          DEF: {p.def_call?.parent?.toUpperCase()} {p.def_call?.sub?.toUpperCase()}
-        </span>
-      </div>
-
-      {(p.off_audible || p.off_fake_audible) && (
-        <div className="text-[11px] font-bold text-maroon">
-          🗣 {p.off_fake_audible ? 'FAKE' : 'AUDIBLE →'}{' '}
-          {p.off_audible?.sub?.toUpperCase?.() || ''}
-        </div>
-      )}
-
-      <div
-        className={`text-xs font-bold flex items-center justify-center gap-2 flex-wrap ${
-          isLast ? 'text-ink' : 'text-ink/85'
-        }`}
-      >
-        <span className="sticker">PLAY!</span>
-        <span className="italic text-left flex-1 min-w-0">{p.text_recap}</span>
-        <span className={`chip ${yardsColor}`}>{yardsStr} yds</span>
-        {p.scoring_event === 'td' && (
-          <span className="chip !bg-lime !text-ink">TD!</span>
-        )}
-        {p.scoring_event === 'fg' && (
-          <span className="chip !bg-lime !text-ink">FG!</span>
-        )}
-        {p.scoring_event === 'safety' && (
-          <span className="chip !bg-warn">SAFETY</span>
-        )}
-        {p.turnover && !p.scoring_event && (
-          <span className="chip !bg-maroon !text-cream">TO</span>
-        )}
-      </div>
-    </li>
-  );
-}
-
 // === Top-level component ===================================================
 
 export default function ResultsPanel({
   playResult,
   progress,
-  history = [],
-  historyCap = 5,
 }: ResultsPanelProps) {
-  // History: exclude the current playResult (it's shown at the top), then
-  // take the last (historyCap - 1) entries. Reverse so newest is first.
-  const currentSeed = playResult?.seed ?? null;
-  const priorHistory = currentSeed != null
-    ? history.filter((h) => h.seed !== currentSeed)
-    : history;
-  const recent = priorHistory.slice(-(historyCap - 1)).reverse();
-
   const showMatchup = !!playResult;
   const isFG = playResult?.off_call?.parent === 'fg';
   const isPunt = playResult?.off_call?.parent === 'punt';
@@ -430,33 +329,6 @@ export default function ResultsPanel({
           </div>
         </>
       )}
-
-      {/* Bottom: scrollable history list */}
-      <div className="mt-3 border-t-4 border-ink pt-2" data-testid="results-history-wrap">
-        <div className="panel-titlebar !mt-0">
-          <span>History</span>
-          <span className="text-xs">Last {historyCap}</span>
-        </div>
-        <div
-          className="max-h-[320px] overflow-y-auto pr-1"
-          data-testid="results-history"
-        >
-          {recent.length === 0 ? (
-            <div
-              className="text-ink/50 text-sm text-center italic"
-              data-testid="history-empty"
-            >
-              No prior plays yet.
-            </div>
-          ) : (
-            <ul className="space-y-2">
-              {recent.map((p, i) => (
-                <HistoryRow key={`${p.seed}-${i}`} p={p} isLast={i === 0} />
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

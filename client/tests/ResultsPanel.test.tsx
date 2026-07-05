@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
-// ResultsPanel component tests — verify the unified panel renders the
-// 2 matchup rectangles + result + scrollable history list correctly.
+// ResultsPanel component tests — verify the panel renders the
+// 2 matchup rectangles + result correctly.
+//
+// The history list was extracted into HistoryPanel.tsx; those tests live in
+// `HistoryPanel.test.tsx` next door.
 
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -40,7 +43,7 @@ const basePlayResult: any = {
 
 describe('ResultsPanel — matchup rectangles', () => {
   it('renders the "Snap the ball…" placeholder when no play result', () => {
-    render(<ResultsPanel playResult={null} progress={null} history={[]} />);
+    render(<ResultsPanel playResult={null} progress={null} />);
     expect(screen.getByText(/Snap the ball/i)).toBeTruthy();
   });
 
@@ -170,79 +173,5 @@ describe('ResultsPanel — verdict + result', () => {
     const toResult = { ...basePlayResult, turnover: true, yards: 0 };
     render(<ResultsPanel playResult={toResult} progress={1} />);
     expect(screen.getByTestId('roll-verdict').textContent).toMatch(/TURNOVER/i);
-  });
-});
-
-describe('ResultsPanel — history list', () => {
-  function makeHistory(): any[] {
-    return [
-      { ...basePlayResult, seed: 1, yards: 5, text_recap: 'Run for 5.' },
-      { ...basePlayResult, seed: 2, yards: 12, text_recap: 'Pass for 12.' },
-      { ...basePlayResult, seed: 3, yards: -3, text_recap: 'Stuff at the LOS.' },
-      { ...basePlayResult, seed: 4, yards: 8, text_recap: 'Gain of 8.' },
-      { ...basePlayResult, seed: 5, yards: 22, text_recap: 'Big play!' },
-      { ...basePlayResult, seed: 6, yards: 4, text_recap: 'Short gain.' },
-    ];
-  }
-
-  it('renders the last 4 prior plays in the scrollable list (current play is excluded)', () => {
-    render(
-      <ResultsPanel
-        playResult={{ ...basePlayResult, seed: 7, yards: 9, text_recap: 'Latest play.' }}
-        progress={1}
-        history={makeHistory()}
-      />,
-    );
-    const list = screen.getByTestId('results-history');
-    expect(list).toBeTruthy();
-    // 6 history entries, current play (seed=7) is not in history, so all 6
-    // are prior. Cap=5 → list shows 4. We can verify by counting text_recaps
-    // appearing in the history list (the current play's recap also appears
-    // at the top via the ResultCard, so count by uniqueness).
-    expect(screen.getByText('Big play!')).toBeTruthy();
-    expect(screen.getByText('Short gain.')).toBeTruthy();
-  });
-
-  it('excludes the current play from the history rows', () => {
-    const current = { ...basePlayResult, seed: 99, yards: 7, text_recap: 'CURRENTPLAY' };
-    render(
-      <ResultsPanel
-        playResult={current}
-        progress={1}
-        history={[
-          ...makeHistory(),
-          current,
-        ]}
-      />,
-    );
-    // The current play's seed appears in the top result card ("Gain of ..." text is
-    // different — but the seed value isn't displayed). Use a unique text_recap
-    // on a history entry and assert it doesn't appear TWICE in the history list.
-    const historyWrap = screen.getByTestId('results-history');
-    const matches = historyWrap.querySelectorAll('li');
-    // historyCap=5, current play excluded → 4 prior + 1 current-in-history
-    // would be 5 total but since seed=99 IS the current play, priorHistory
-    // filters it out → expect 4 rows.
-    expect(matches.length).toBe(4);
-  });
-
-  it('renders the empty-state placeholder when there is no prior history', () => {
-    render(<ResultsPanel playResult={basePlayResult} progress={1} history={[]} />);
-    expect(screen.getByTestId('history-empty')).toBeTruthy();
-  });
-
-  it('marks the newest history row with ▶ LAST PLAY (last-play test ID)', () => {
-    render(
-      <ResultsPanel
-        playResult={{ ...basePlayResult, seed: 100, text_recap: 'Latest.' }}
-        progress={1}
-        history={[
-          { ...basePlayResult, seed: 1, text_recap: 'Earlier A.' },
-          { ...basePlayResult, seed: 2, text_recap: 'Earlier B.' },
-        ]}
-      />,
-    );
-    const lastPlay = screen.getByTestId('last-play');
-    expect(lastPlay.textContent).toMatch(/LAST PLAY/);
   });
 });
