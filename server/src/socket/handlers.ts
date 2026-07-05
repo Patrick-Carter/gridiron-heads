@@ -14,10 +14,10 @@ import {
   resolveCurrentPlay,
   snapshot,
   clearSchemes,
-  TOTAL_PICKS,
   isValidAudibleSub,
 } from './game_machine.js';
 import type { RoomState } from './game_machine.js';
+import { TOTAL_PICKS } from '@gridiron/shared';
 import type { Play, PlaySub } from '@gridiron/shared';
 
 // In-memory room registry (could be persisted to DB if needed).
@@ -46,10 +46,27 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
     const sdata: SocketData = (socket.data ||= {});
 
     socket.on('session:join', ({ session_id, player_id, display_name }: { session_id: string; player_id: string; display_name: string }) => {
-      const room = rooms.get(session_id);
+      // Hydrate room from DB if not in memory
+      let room = rooms.get(session_id);
       if (!room) {
-        socket.emit('session:error', { error: 'not_found' });
-        return;
+        const row = _db
+          .prepare('SELECT state FROM sessions WHERE id = ?')
+          .get(session_id) as { state: string } | undefined;
+        if (!row) {
+          socket.emit('session:error', { error: 'not_found' });
+          return;
+        }
+        const persistedState = JSON.parse(row.state);
+        const host = persistedState.players[0];
+        const guest = persistedState.players[1];
+        if (!host) {
+          socket.emit('session:error', { error: 'no_host' });
+          return;
+        }
+        room = newRoom(session_id, host.id, host.name);
+        room.players = persistedState.players;
+        room.guest_id = guest?.id ?? null;
+        rooms.set(session_id, room);
       }
       sdata.session_id = session_id;
       sdata.player_id = player_id;
@@ -218,6 +235,13 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       game.phase = 'play_anim';
       io.to(`session:${sdata.session_id}`).emit('play:result', { result });
       io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
+      // After the client animation completes, server transitions to between_plays
+      setTimeout(() => {
+        if (room.game?.phase === 'play_anim') {
+          room.game.phase = 'between_plays';
+          io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
+        }
+      }, 2000);
     });
 
     socket.on('game:next_play', () => {

@@ -9,4 +9,4 @@ client/dist/
 server/dist/
 shared/dist/
 coverage/
-.vite/
+.vite/*.tsbuildinfo

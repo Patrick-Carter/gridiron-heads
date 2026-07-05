@@ -1,8 +1,19 @@
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import Home from './screens/Home.js';
+import Create from './screens/Create.js';
+import Join from './screens/Join.js';
+import SessionRouter from './screens/SessionRouter.js';
+
 export default function App() {
   return (
-    <div className="min-h-full bg-bg text-fg p-8">
-      <h1 className="text-3xl font-bold text-accent">Gridiron Heads</h1>
-      <p className="mt-2 text-fg/80">Scaffold OK — Tailwind + React + Vite.</p>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/create" element={<Create />} />
+        <Route path="/join" element={<Join />} />
+        <Route path="/join/:sessionId" element={<Join />} />
+        <Route path="/session/:id" element={<SessionRouter />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
