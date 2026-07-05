@@ -42,7 +42,6 @@ export default function Game({
   const opponentId = players.find((p) => p.id !== meId)?.id;
   const opponentScheme = state.pending_schemes?.[opponentId ?? ''] ?? null;
   const [isAnimating, setIsAnimating] = useState(false);
-  const [canReplay, setCanReplay] = useState(false);
   /** When set, the field renders a single frame at this progress instead of
    *  running the animation. The ReplayScrubber component (Phase 6) controls
    *  this via drag/scrub. null = run live animation. */
@@ -59,7 +58,6 @@ export default function Game({
   useEffect(() => {
     if (lastPlayResult) {
       setIsAnimating(true);
-      setCanReplay(true);
       // === Audio: route the result through the synth ============================
       // Scoring plays get the most distinctive stings; routine plays get a
       // scaled cheer/thud combo so the field never feels silent.
@@ -90,12 +88,6 @@ export default function Game({
 
   function handleAnimationDone() {
     setIsAnimating(false);
-  }
-
-  function handleReplay() {
-    if (lastPlayResult) {
-      setIsAnimating(true);
-    }
   }
 
   const pendingMyScheme = state.pending_schemes?.[meId];
@@ -178,31 +170,6 @@ export default function Game({
             setScrubProgress={setScrubProgress}
           />
 
-          <div className="panel-flash flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span className="font-bold">
-              <span className="chip !bg-sun !text-ink">
-                {game.down === 1 ? '1st' : game.down === 2 ? '2nd' : game.down === 3 ? '3rd' : '4th'}
-              </span>{' '}
-              &amp; {game.distance}
-              {game.distance >= 10 && game.ball_yardline >= 10 && game.ball_yardline <= 90
-                ? ` at own ${yardsFromOwnGoal(game)}`
-                : ''}
-            </span>
-            <span className="text-xs font-bold">
-              <span className={isOffense ? 'chip !bg-lime' : 'chip !bg-maroon !text-cream'}>
-                {isOffense ? 'OFFENSE 🏈' : 'DEFENSE 🛡️'}
-              </span>
-            </span>
-            {canReplay && !isAnimating && (
-              <button
-                onClick={handleReplay}
-                className="btn-flash btn-cool text-sm"
-              >
-                ↻ Replay
-              </button>
-            )}
-          </div>
-
           {lastPlayResult && !isAnimating && (
             <div className="panel-flash text-base text-center space-y-2">
               <div className="panel-titlebar !mt-0"><span>Your Play</span><span className="text-xs">Recap</span></div>
@@ -227,6 +194,23 @@ export default function Game({
 
         {/* Right: Controls + Log */}
         <div className="space-y-3">
+          <div className="panel-flash flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span className="font-bold">
+              <span className="chip !bg-sun !text-ink">
+                {game.down === 1 ? '1st' : game.down === 2 ? '2nd' : game.down === 3 ? '3rd' : '4th'}
+              </span>{' '}
+              &amp; {game.distance}
+              {game.distance >= 10 && game.ball_yardline >= 10 && game.ball_yardline <= 90
+                ? ` at own ${yardsFromOwnGoal(game)}`
+                : ''}
+            </span>
+            <span className="text-xs font-bold">
+              <span className={isOffense ? 'chip !bg-lime' : 'chip !bg-maroon !text-cream'}>
+                {isOffense ? 'OFFENSE 🏈' : 'DEFENSE 🛡️'}
+              </span>
+            </span>
+          </div>
+
           {game.phase === 'awaiting_schemes' && !pendingMyScheme && (
             <SchemePicker
               onPick={(parent, sub) => send(EVENTS.SCHEME_PICK, { parent, sub })}
@@ -314,7 +298,6 @@ export default function Game({
             <button
               onClick={() => {
                 setLastPlayResult(null);
-                setCanReplay(false);
                 send(EVENTS.NEXT_PLAY);
               }}
               className="btn-flash btn-primary w-full"

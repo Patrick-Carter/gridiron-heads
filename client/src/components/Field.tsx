@@ -473,6 +473,7 @@ function drawFieldBase(
   ctx: CanvasRenderingContext2D,
   ballYardline: number,
   direction: 1 | -1,
+  distance: number,
   homeName: string,
   awayName: string,
 ) {
@@ -574,8 +575,8 @@ function drawFieldBase(
     // LOS label at top
     drawText(ctx, 'LOS', losX + 3, FIELD_TOP + 2, COLORS.yellow);
 
-    // First-down marker (10 yards ahead of LOS in offense's direction)
-    const fdYard = ballYardline + 10 * direction;
+    // First-down marker (distance yards ahead of LOS in offense's direction)
+    const fdYard = ballYardline + distance * direction;
     if (fdYard > 0 && fdYard < 100) {
       const fdX = Math.round((fdYard / 100) * FIELD_W);
       ctx.fillStyle = COLORS.goalpost;
@@ -1391,7 +1392,7 @@ export default function Field({
     // Scoreboard + crowds + field + status bar (chrome)
     drawScoreboard(ctx, homeName, awayName, homeScore, awayScore);
     drawCrowdBand(ctx, SCOREBOARD_H);
-    drawFieldBase(ctx, ballYardline, offenseDirection, homeName, awayName);
+    drawFieldBase(ctx, ballYardline, offenseDirection, distance, homeName, awayName);
     drawCrowdBand(ctx, FIELD_BOTTOM);
     drawStatusBar(ctx, down, distance, ballYardline, offenseDirection);
     drawStaticLineup(ctx, ballYardline, offenseDirection);
@@ -1430,7 +1431,7 @@ export default function Field({
 
       drawScoreboard(ctx, homeName, awayName, homeScore, awayScore);
       drawCrowdBand(ctx, SCOREBOARD_H);
-      drawFieldBase(ctx, animLosYardline, direction, homeName, awayName);
+      drawFieldBase(ctx, animLosYardline, direction, distance, homeName, awayName);
       drawCrowdBand(ctx, FIELD_BOTTOM);
       drawStatusBar(ctx, down, distance, animLosYardline, direction);
 
@@ -1455,7 +1456,7 @@ export default function Field({
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         drawScoreboard(ctx, homeName, awayName, homeScore, awayScore);
         drawCrowdBand(ctx, SCOREBOARD_H);
-        drawFieldBase(ctx, ballYardline, offenseDirection, homeName, awayName);
+        drawFieldBase(ctx, ballYardline, offenseDirection, distance, homeName, awayName);
         drawCrowdBand(ctx, FIELD_BOTTOM);
         drawStatusBar(ctx, down, distance, ballYardline, offenseDirection);
         drawStaticLineup(ctx, ballYardline, offenseDirection);
@@ -1483,7 +1484,7 @@ export default function Field({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawScoreboard(ctx, homeName, awayName, homeScore, awayScore);
     drawCrowdBand(ctx, SCOREBOARD_H);
-    drawFieldBase(ctx, animLosYardline, direction, homeName, awayName);
+    drawFieldBase(ctx, animLosYardline, direction, distance, homeName, awayName);
     drawCrowdBand(ctx, FIELD_BOTTOM);
     drawStatusBar(ctx, down, distance, animLosYardline, direction);
     const frame = computeFrame(ctx, canvas, playResult, scrubProgress, direction);

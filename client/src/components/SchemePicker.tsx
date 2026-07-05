@@ -28,11 +28,6 @@ export default function SchemePicker({
 
   return (
     <div className="panel-flash space-y-3">
-      <div className="panel-titlebar !mt-0">
-        <span>Pick Your Play!</span>
-        <span className="text-xs">Simul-reveal</span>
-      </div>
-
       <div className="grid grid-cols-4 gap-2">
         {(['run', 'pass', 'punt', 'fg'] as PlayParent[]).map((p) => (
           <button
