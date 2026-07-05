@@ -41,14 +41,28 @@ export interface ResolveOutput {
   effective_def_play: Play;
   parent_match: boolean;
   sub_match: boolean;
+  /** Skill roll [0, off_skill_eff]. 0 when punt/fg or parent mismatch (offense auto-wins, no roll). */
   off_roll: number;
+  /** Skill roll [0, def_skill_eff]. 0 when punt/fg or parent mismatch. */
   def_roll: number;
+  /** Effective off_skill after QB modifiers (the bound for off_roll). 0 when punt/fg. */
+  off_skill_eff: number;
+  /** Effective def_skill after QB modifiers (the bound for def_roll). 0 when punt/fg. */
+  def_skill_eff: number;
+  /** O-LINE roll [0, off_line_skill]. 0 when punt/fg or gap was 0 (ties = skipped line roll). */
+  off_line_roll: number;
+  /** D-LINE roll [0, def_line_skill]. 0 when punt/fg or gap was 0. */
+  def_line_roll: number;
+  /** O_LINE skill used (input value or default 60). 0 when punt/fg. */
+  off_line_skill: number;
+  /** D_LINE skill used (input value or default 60). 0 when punt/fg. */
+  def_line_skill: number;
   /** Which side the line roll picked as winner, if the line roll fired.
-   *  null when the gap was below LINE_GAP_LEAN (line roll skipped entirely). */
+   *  null when the gap was below LINE_ROLL_GAP_LEAN (line roll skipped entirely). */
   line_winner: 'offense' | 'defense' | null;
   /** Magnitude of the line roll gap (winner_roll - loser_roll). 0 when skipped. */
   line_roll_gap: number;
-  /** "lean" (gap 20..39, yardage nudged) | "dominate" (gap >=40, outcome flipped) | null. */
+  /** "lean" (gap 5..14, yardage nudged) | "dominate" (gap >=15, outcome flipped) | null. */
   line_regime: 'lean' | 'dominate' | null;
   turnover: boolean;
   turnover_chance: number;
@@ -137,14 +151,16 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
   // it's a fair roll: higher skill wins, ties = 0 yards, no turnover.
   let offense_wins = false;
   let defense_wins = false;
+  let off_roll = 0;
+  let def_roll = 0;
   if (parent === 'punt' || parent === 'fg') {
     offense_wins = false;
     defense_wins = false;
   } else if (!parent_match) {
     offense_wins = true;
   } else {
-    const off_roll = Math.floor(rng() * (off_skill + 1));
-    const def_roll = Math.floor(rng() * (def_skill + 1));
+    off_roll = Math.floor(rng() * (off_skill + 1));
+    def_roll = Math.floor(rng() * (def_skill + 1));
     if (off_roll > def_roll) offense_wins = true;
     else if (def_roll > off_roll) defense_wins = true;
   }
@@ -160,12 +176,16 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
   let line_regime: 'lean' | 'dominate' | null = null;
   let line_dominated_offense = false;
   let line_dominated_defense = false;
+  let off_line_roll = 0;
+  let def_line_roll = 0;
+  let off_line_skill_eff = 0;
+  let def_line_skill_eff = 0;
 
   if (parent === 'run' || parent === 'pass') {
-    const off_line_skill = input.off_line_skill ?? 60;
-    const def_line_skill = input.def_line_skill ?? 60;
-    const off_line_roll = Math.floor(rng() * (off_line_skill + 1));
-    const def_line_roll = Math.floor(rng() * (def_line_skill + 1));
+    off_line_skill_eff = input.off_line_skill ?? 60;
+    def_line_skill_eff = input.def_line_skill ?? 60;
+    off_line_roll = Math.floor(rng() * (off_line_skill_eff + 1));
+    def_line_roll = Math.floor(rng() * (def_line_skill_eff + 1));
     if (off_line_roll !== def_line_roll) {
       const offense_line_won = off_line_roll > def_line_roll;
       line_winner = offense_line_won ? 'offense' : 'defense';
@@ -293,8 +313,14 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
     effective_def_play,
     parent_match,
     sub_match,
-    off_roll: 0,
-    def_roll: 0,
+    off_roll,
+    def_roll,
+    off_skill_eff: off_skill,
+    def_skill_eff: def_skill,
+    off_line_roll,
+    def_line_roll,
+    off_line_skill: off_line_skill_eff,
+    def_line_skill: def_line_skill_eff,
     line_winner,
     line_roll_gap,
     line_regime,

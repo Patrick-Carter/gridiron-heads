@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { EVENTS } from '../api/socket.js';
 import Field from '../components/Field.js';
 import SchemePicker from '../components/SchemePicker.js';
@@ -6,6 +6,19 @@ import AudiblePanel from '../components/AudiblePanel.js';
 import ScorePanel from '../components/ScorePanel.js';
 import PlayLog from '../components/PlayLog.js';
 import RosterModal from '../components/RosterModal.js';
+import RollReveal from '../components/RollReveal.js';
+import ReplayScrubber from '../components/ReplayScrubber.js';
+import TdConfetti from '../components/TdConfetti.js';
+import {
+  initAudio,
+  playSnap,
+  playThud,
+  playCheer,
+  playTdSiren,
+  playFgBell,
+  playFgMiss,
+  playTurnover,
+} from '../audio/synth.js';
 import type { SessionSnapshot } from '../hooks/useSession.js';
 import { yardsFromOwnGoal, type Play } from '@gridiron/shared';
 
@@ -30,12 +43,48 @@ export default function Game({
   const opponentScheme = state.pending_schemes?.[opponentId ?? ''] ?? null;
   const [isAnimating, setIsAnimating] = useState(false);
   const [canReplay, setCanReplay] = useState(false);
+  /** When set, the field renders a single frame at this progress instead of
+   *  running the animation. The ReplayScrubber component (Phase 6) controls
+   *  this via drag/scrub. null = run live animation. */
+  const [scrubProgress, setScrubProgress] = useState<number | null>(null);
+  /** Live animation progress (0..1). Updated by Field via onProgress callback.
+   *  Drives the RollReveal HUD's flip-in reveal timing. */
+  const [animProgress, setAnimProgress] = useState<number>(0);
+  /** Use a ref for the progress setter so we don't re-render Field every frame. */
+  const animProgressRef = useRef(0);
+  /** Increments each time a TD/FG/safety play resolves → triggers confetti rain. */
+  const [confettiKey, setConfettiKey] = useState<number>(0);
 
-  // Trigger animation when a new play result arrives
+  // Trigger animation + audio when a new play result arrives
   useEffect(() => {
     if (lastPlayResult) {
       setIsAnimating(true);
       setCanReplay(true);
+      // === Audio: route the result through the synth ============================
+      // Scoring plays get the most distinctive stings; routine plays get a
+      // scaled cheer/thud combo so the field never feels silent.
+      const r = lastPlayResult;
+      if (r.scoring_event === 'td') {
+        playTdSiren();
+        setTimeout(() => playCheer(1.5), 200);
+        setConfettiKey((k) => k + 1);
+      } else if (r.scoring_event === 'fg') {
+        playFgBell();
+        setTimeout(() => playCheer(0.6), 150);
+        setConfettiKey((k) => k + 1);
+      } else if (r.scoring_event === 'safety') {
+        playFgMiss();
+        setTimeout(() => playThud(1.2), 100);
+        setConfettiKey((k) => k + 1);
+      } else if (r.turnover && !r.scoring_event) {
+        playTurnover();
+        setTimeout(() => playCheer(0.4), 100);
+      } else {
+        // Routine play — light thud + small cheer (volume scales with yards)
+        const intensity = Math.min(1.2, Math.abs(r.yards ?? 0) / 20 + 0.2);
+        playThud(intensity);
+        setTimeout(() => playCheer(intensity * 0.4), 80);
+      }
     }
   }, [lastPlayResult?.seed]);
 
@@ -95,8 +144,39 @@ export default function Game({
               offenseDirection={game.possession_idx === 0 ? 1 : -1}
               isAnimating={isAnimating}
               onAnimationDone={handleAnimationDone}
+              homeName={players[0]?.name ?? 'HOME'}
+              awayName={players[1]?.name ?? 'AWAY'}
+              homeScore={game.scores[0]}
+              awayScore={game.scores[1]}
+              down={game.down}
+              distance={game.distance}
+              scrubProgress={scrubProgress}
+              onProgress={(p) => {
+                // Throttle React updates: only commit state every ~30ms
+                const now = performance.now();
+                if (now - (animProgressRef as any)._lastCommit > 30 || p >= 1) {
+                  animProgressRef.current = p;
+                  setAnimProgress(p);
+                  (animProgressRef as any)._lastCommit = now;
+                }
+              }}
             />
           </div>
+
+          {/* Phase 4: skill-roll reveal HUD below the field. Visible always
+              (recap mode when no animation, sync mode during animation). */}
+          <RollReveal
+            playResult={lastPlayResult}
+            progress={isAnimating ? animProgress : null}
+          />
+
+          {/* Phase 6: replay scrubber — frame-step the last play. */}
+          <ReplayScrubber
+            playResult={lastPlayResult}
+            isAnimating={isAnimating}
+            scrubProgress={scrubProgress}
+            setScrubProgress={setScrubProgress}
+          />
 
           <div className="panel-flash flex flex-wrap items-center justify-between gap-2 text-sm">
             <span className="font-bold">
@@ -181,7 +261,7 @@ export default function Game({
                 </div>
               )}
               <button
-                onClick={() => send(EVENTS.SNAP)}
+                onClick={() => { initAudio(); playSnap(); send(EVENTS.SNAP); }}
                 className="btn-flash btn-xtra btn-go w-full"
               >
                 ⚡ SNAP! ⚡
@@ -270,6 +350,9 @@ export default function Game({
         onClose={() => setRosterIdx(null)}
         onSwitch={(idx) => setRosterIdx(idx)}
       />
+
+      {/* Phase 7: confetti rain on scoring plays */}
+      <TdConfetti triggerKey={confettiKey} />
     </div>
   );
 }

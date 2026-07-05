@@ -1,3 +1,5 @@
+import MuteToggle from './MuteToggle.js';
+
 export default function ScorePanel({
   scores,
   myIdx,
@@ -11,7 +13,10 @@ export default function ScorePanel({
     <div className="panel-flash text-center">
       <div className="panel-titlebar !mt-0">
         <span>Scoreboard</span>
-        <span className="text-xs">First to 3 (win by 2)</span>
+        <span className="text-xs flex items-center gap-2">
+          <span>First to 3 (win by 2)</span>
+          <MuteToggle />
+        </span>
       </div>
       <div className="grid grid-cols-2 gap-3">
         {[0, 1].map((i) => {

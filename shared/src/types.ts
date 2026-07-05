@@ -113,6 +113,40 @@ export interface PlayResult {
   /** Direction of attack for the offense at the time of the play:
    *  +1 = attacking toward yardline 100 (right); -1 = attacking toward 0 (left). */
   offense_direction: 1 | -1;
+
+  // === Phase 0: roll-data plumbing (was discarded before — now exposed to client) ===
+  /** Skill roll [0, off_skill_eff]. Higher = offense wins the play. 0 when parent mismatched (offense auto-wins) or punt/fg. */
+  off_roll?: number;
+  /** Skill roll [0, def_skill_eff]. Higher = defense wins the play. 0 when punt/fg. */
+  def_roll?: number;
+  /** Effective off_skill after QB modifiers applied (the bound for off_roll). */
+  off_skill_eff?: number;
+  /** Effective def_skill after QB modifiers applied (the bound for def_roll). */
+  def_skill_eff?: number;
+  /** O-LINE roll [0, off_line_skill]. Per-play trench roll. 0 when punt/fg. */
+  off_line_roll?: number;
+  /** D-LINE roll [0, def_line_skill]. Per-play trench roll. 0 when punt/fg. */
+  def_line_roll?: number;
+  /** O_LINE skill bound for off_line_roll. */
+  off_line_skill?: number;
+  /** D_LINE skill bound for def_line_roll. */
+  def_line_skill?: number;
+  /** Which side won the line roll (null when gap was below LINE_ROLL_GAP_LEAN or punt/fg). */
+  line_winner?: 'offense' | 'defense' | null;
+  /** "lean" (gap 5..14) | "dominate" (gap >=15) | null. Drives yardage nudge / outcome flip. */
+  line_regime?: 'lean' | 'dominate' | null;
+  /** Per-play magnitude of line roll gap (winner_roll - loser_roll). 0 when skipped. */
+  line_roll_gap?: number;
+  /** FG: power roll [0, kicker_power_eff]. */
+  fg_power_roll?: number;
+  /** FG: bonus roll [0, 20]. Universal (no QB mod). */
+  fg_bonus_roll?: number;
+  /** FG: power_roll + bonus_roll. Compared to yards_to_endzone for make/miss. */
+  fg_total?: number;
+  /** FG: effective kicker power after QB modifiers (the bound for power_roll). */
+  fg_power_eff?: number;
+  /** Punt: net forward yardage rolled (30..50). Used by the recap/HUD. */
+  punt_roll?: number;
 }
 
 export function flipSubtype(p: Play): Play {

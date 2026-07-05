@@ -323,6 +323,11 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       text_recap: fg.make
         ? `FIELD GOAL IS GOOD! (${fg.total} > ${ytg})`
         : `FG missed (${fg.total} ≤ ${ytg})`,
+      // Phase 0: surface the FG roll values for the canvas HUD
+      fg_power_roll: fg.power_roll,
+      fg_bonus_roll: fg.bonus_roll,
+      fg_total: fg.total,
+      fg_power_eff: fg.power_used,
     };
     if (fg.make) {
       game.scores = addPoints(game.scores, game.possession_idx, 0.5);
@@ -379,6 +384,8 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       text_recap: turnover
         ? `PUNT BLOCKED! Defense takes over.`
         : `Punt of ${punt_yards} yards.`,
+      // Phase 0: surface the punt roll for the canvas HUD
+      punt_roll: punt_yards,
     };
     // Either way, receiving team gets the ball at the absolute landing spot
     // with a fresh 1st & 10 and attacks the OPPOSITE end zone. The yardline
@@ -501,6 +508,19 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     seed,
     offense_direction,
     text_recap: recapText(resolve, scoring_event, game.down, game.distance),
+    // Phase 0: surface every per-play roll so the client HUD can show
+    // what each position group rolled for its skill check
+    off_roll: resolve.off_roll,
+    def_roll: resolve.def_roll,
+    off_skill_eff: resolve.off_skill_eff,
+    def_skill_eff: resolve.def_skill_eff,
+    off_line_roll: resolve.off_line_roll,
+    def_line_roll: resolve.def_line_roll,
+    off_line_skill: resolve.off_line_skill,
+    def_line_skill: resolve.def_line_skill,
+    line_winner: resolve.line_winner,
+    line_regime: resolve.line_regime,
+    line_roll_gap: resolve.line_roll_gap,
   };
   clearAudibles(game);
   clearSchemes(room);

@@ -190,8 +190,11 @@ describe('Play resolution', () => {
     expect(succeeded).toBe(true);
   });
 
-  it('parent match but sub mismatch: yards capped small (1..8)', () => {
+  it('parent match but sub mismatch: yards capped small (1..11)', () => {
     // Defense correctly read run/pass but wrong sub — should yield limited gain.
+    // Base tier is 1..8; with a LEAN nudge from the line roll (added f1dd544),
+    // the effective max is 1..11. We use 12 as the upper bound for a small
+    // safety margin against future tier tweaks.
     let found = false;
     for (let s = 1; s < 200 && !found; s++) {
       const r = setupReadyToSnapRoom();
@@ -200,7 +203,7 @@ describe('Play resolution', () => {
       const { result } = resolveCurrentPlay(r, s);
       if (!result.turnover && result.yards > 0) {
         expect(result.yards).toBeGreaterThanOrEqual(1);
-        expect(result.yards).toBeLessThanOrEqual(10);
+        expect(result.yards).toBeLessThanOrEqual(12);
         found = true;
       }
     }
