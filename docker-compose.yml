@@ -27,6 +27,10 @@ services:
       NODE_ENV: production
       PORT: "3000"
       DB_PATH: /app/data/gridiron.db
+      # Comma-separated browser origins allowed to connect. Default is
+      # https://bb.carterhub.net (see server/src/security.ts:loadAllowedOrigins).
+      # Server-to-server / curl (no Origin header) is always allowed.
+      ALLOWED_ORIGINS: "https://bb.carterhub.net"
     volumes:
       # Persistent SQLite sessions — change the left side for your host.
       - ./data:/app/data

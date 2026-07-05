@@ -31,6 +31,7 @@ import {
   resolveCurrentPlay,
   snapshot,
 } from './game_machine.js';
+import { touchRoom } from '../rooms.js';
 // Note: cpu.ts is a leaf — only handlers.ts imports it. No circular deps.
 // Static import of resolveCurrentPlay + snapshot avoids dynamic require().
 
@@ -289,7 +290,10 @@ export function tickCpu(io: IOServer, room: RoomState, depth = 0): void {
   if (cpuIdx === -1) return;
 
   const sid = room.session_id;
-  const broadcast = () => io.to(`session:${sid}`).emit('session:state', snapshot(room));
+  const broadcast = () => {
+    touchRoom(room);
+    io.to(`session:${sid}`).emit('session:state', snapshot(room));
+  };
 
   // Draft phase — CPU picks on its turn.
   if (room.draft && room.draft.current_turn < TOTAL_PICKS) {

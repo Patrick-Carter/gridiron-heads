@@ -10,21 +10,40 @@ export default function SessionRouter() {
   const { id } = useParams<{ id: string }>();
   if (!id) return <div>Missing session id</div>;
   const playerId = localStorage.getItem(`gridiron:player_id:${id}`);
+  const authToken = localStorage.getItem(`gridiron:auth_token:${id}`);
   const playerName = localStorage.getItem(`gridiron:player_name:${id}`) ?? '';
-  if (!playerId) {
+  if (!playerId || !authToken) {
     return (
       <div className="p-8 text-fg">
         <p>No player id found. <a className="text-accent" href="/">Start over</a></p>
       </div>
     );
   }
-  return <SessionInner sessionId={id} playerId={playerId} playerName={playerName} />;
+  return (
+    <SessionInner
+      sessionId={id}
+      playerId={playerId}
+      authToken={authToken}
+      playerName={playerName}
+    />
+  );
 }
 
-function SessionInner({ sessionId, playerId, playerName }: { sessionId: string; playerId: string; playerName: string }) {
-  const { state, me, lastPlayResult, error, connected, send, setLastPlayResult } = useSession(
+function SessionInner({
+  sessionId,
+  playerId,
+  authToken,
+  playerName,
+}: {
+  sessionId: string;
+  playerId: string;
+  authToken: string;
+  playerName: string;
+}) {
+  const { state, lastPlayResult, error, send, setLastPlayResult } = useSession(
     sessionId,
     playerId,
+    authToken,
     playerName,
   );
 
@@ -36,7 +55,6 @@ function SessionInner({ sessionId, playerId, playerName }: { sessionId: string; 
     );
   }
 
-  // Route based on state shape
   if (state.game?.phase === 'ended') {
     return (
       <GameOver

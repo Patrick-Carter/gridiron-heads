@@ -49,6 +49,9 @@ export interface RoomState {
   current_play_rng_seed: number | null;
   /** Player id of the CPU opponent, when this is a vs-CPU room. null otherwise. */
   cpu_player_id: string | null;
+  /** Last time any socket interacted with this room. Used by the in-memory
+   *  reaper to drop abandoned rooms. */
+  last_activity_at: number;
 }
 
 export function newRoom(
@@ -77,6 +80,7 @@ export function newRoom(
     current_play: null,
     current_play_rng_seed: null,
     cpu_player_id: cpuId,
+    last_activity_at: Date.now(),
   };
 }
 

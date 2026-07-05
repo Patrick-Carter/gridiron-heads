@@ -62,6 +62,7 @@
   <Config Name="NODE_ENV" Target="NODE_ENV" Default="production" Mode="" Description="Node runtime mode" Type="Variable" Required="False" />
   <Config Name="PORT" Target="PORT" Default="3000" Mode="" Description="HTTP listen port (must match the mapped HostPort)" Type="Variable" Required="False" />
   <Config Name="DB_PATH" Target="DB_PATH" Default="/app/data/gridiron.db" Mode="" Description="Absolute path of the SQLite file inside the container" Type="Variable" Required="False" />
+  <Config Name="ALLOWED_ORIGINS" Target="ALLOWED_ORIGINS" Default="https://bb.carterhub.net" Mode="" Description="Comma-separated browser origins allowed to connect. Server-to-server / curl (no Origin header) is always allowed." Type="Variable" Required="False" />
   <Config Name="TZ" Target="TZ" Default="America/Chicago" Mode="" Description="Timezone for log timestamps" Type="Variable" Required="False" />
 
   <!-- Container hardening -->

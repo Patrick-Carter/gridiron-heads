@@ -18,6 +18,7 @@ export default function Create() {
     try {
       const r = await createSession(name.trim(), mode === 'cpu');
       localStorage.setItem(`gridiron:player_id:${r.session_id}`, r.player_id);
+      localStorage.setItem(`gridiron:auth_token:${r.session_id}`, r.auth_token);
       localStorage.setItem(`gridiron:player_name:${r.session_id}`, name.trim());
       navigate(`/session/${r.session_id}`);
     } catch (err) {

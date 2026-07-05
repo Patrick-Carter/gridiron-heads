@@ -3,6 +3,10 @@
 export interface CreateSessionResponse {
   session_id: string;
   player_id: string;
+  /** Opaque token the client persists to localStorage; the server resolves
+   *  it back to (session_id, player_id) on every reconnect. The player_id
+   *  alone is no longer trusted. */
+  auth_token: string;
   /** null when vs_cpu=true (no one to share with). */
   share_url: string | null;
   state: any;
@@ -10,6 +14,7 @@ export interface CreateSessionResponse {
 
 export interface JoinSessionResponse {
   player_id: string;
+  auth_token: string;
   state: any;
 }
 
@@ -42,8 +47,13 @@ export async function joinSession(
   return r.json();
 }
 
-export async function getSession(session_id: string): Promise<{ state: any }> {
-  const r = await fetch(`/api/sessions/${session_id}`);
+export async function getSession(
+  session_id: string,
+  auth_token?: string,
+): Promise<{ state: any }> {
+  const headers: Record<string, string> = {};
+  if (auth_token) headers['Authorization'] = `Bearer ${auth_token}`;
+  const r = await fetch(`/api/sessions/${session_id}`, { headers });
   if (!r.ok) throw new Error(`getSession failed: ${r.status}`);
   return r.json();
 }

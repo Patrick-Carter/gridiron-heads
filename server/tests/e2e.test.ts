@@ -47,6 +47,8 @@ describe('2-player end-to-end flow', () => {
   let sessionId: string;
   let hostPlayerId: string;
   let guestPlayerId: string;
+  let hostAuthToken: string;
+  let guestAuthToken: string;
 
   beforeAll(async () => {
     for (const ext of ['', '-wal', '-shm']) {
@@ -70,6 +72,7 @@ describe('2-player end-to-end flow', () => {
     const createJson = await createRes.json();
     sessionId = createJson.session_id;
     hostPlayerId = createJson.player_id;
+    hostAuthToken = createJson.auth_token;
 
     const joinRes = await fetch(`http://localhost:${port}/api/sessions/${sessionId}/join`, {
       method: 'POST',
@@ -78,6 +81,7 @@ describe('2-player end-to-end flow', () => {
     });
     const joinJson = await joinRes.json();
     guestPlayerId = joinJson.player_id;
+    guestAuthToken = joinJson.auth_token;
 
     // Open sockets
     host = makeClient(port);
@@ -97,8 +101,8 @@ describe('2-player end-to-end flow', () => {
   it('complete flow: join → ready → draft → play', async () => {
     // Wait for coin flip result to arrive (after both ready)
     const coinPromise = waitFor(host, 'session:state', (s) => s && s.coin_result != null);
-    host.emit('session:join', { session_id: sessionId, player_id: hostPlayerId, display_name: 'Alice' });
-    guest.emit('session:join', { session_id: sessionId, player_id: guestPlayerId, display_name: 'Bob' });
+    host.emit('session:join', { session_id: sessionId, auth_token: hostAuthToken, display_name: 'Alice' });
+    guest.emit('session:join', { session_id: sessionId, auth_token: guestAuthToken, display_name: 'Bob' });
     // Wait for state to reflect both players joined
     await waitFor(host, 'session:state', (s) => s && s.players.length === 2);
     host.emit('session:ready');
@@ -198,8 +202,8 @@ describe('2-player end-to-end flow', () => {
       new Promise<void>((r) => a.on('connect', () => r())),
       new Promise<void>((r) => b.on('connect', () => r())),
     ]);
-    a.emit('session:join', { session_id: c.session_id, player_id: c.player_id, display_name: 'WinnerHost' });
-    b.emit('session:join', { session_id: c.session_id, player_id: j.player_id, display_name: 'LoserGuest' });
+    a.emit('session:join', { session_id: c.session_id, auth_token: c.auth_token, display_name: 'WinnerHost' });
+    b.emit('session:join', { session_id: c.session_id, auth_token: j.auth_token, display_name: 'LoserGuest' });
     await waitFor(a, 'session:state', (s) => s.players.length === 2);
     a.emit('session:ready');
     b.emit('session:ready');
@@ -293,8 +297,8 @@ describe('2-player end-to-end flow', () => {
       new Promise<void>((r) => a.on('connect', () => r())),
       new Promise<void>((r) => b.on('connect', () => r())),
     ]);
-    a.emit('session:join', { session_id: c.session_id, player_id: c.player_id, display_name: 'X' });
-    b.emit('session:join', { session_id: c.session_id, player_id: j.player_id, display_name: 'Y' });
+    a.emit('session:join', { session_id: c.session_id, auth_token: c.auth_token, display_name: 'X' });
+    b.emit('session:join', { session_id: c.session_id, auth_token: j.auth_token, display_name: 'Y' });
     await waitFor(a, 'session:state', (s) => s.players.length === 2);
     a.emit('session:ready');
     b.emit('session:ready');

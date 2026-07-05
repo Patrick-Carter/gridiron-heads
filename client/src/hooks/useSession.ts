@@ -20,7 +20,12 @@ export interface PlayResultMsg {
   result: any;
 }
 
-export function useSession(session_id: string, player_id: string, display_name: string = '') {
+export function useSession(
+  session_id: string,
+  player_id: string,
+  auth_token: string,
+  display_name: string = '',
+) {
   const [state, setState] = useState<SessionSnapshot | null>(null);
   const [lastPlayResult, setLastPlayResult] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +38,11 @@ export function useSession(session_id: string, player_id: string, display_name: 
 
     const onConnect = () => {
       setConnected(true);
-      sock.emit(EVENTS.SESSION_JOIN, { session_id, player_id, display_name });
+      sock.emit(EVENTS.SESSION_JOIN, {
+        session_id,
+        auth_token,
+        display_name,
+      });
     };
     const onDisconnect = () => setConnected(false);
     const onState = (snap: SessionSnapshot) => {
@@ -60,7 +69,7 @@ export function useSession(session_id: string, player_id: string, display_name: 
       sock.off(EVENTS.PLAY_RESULT, onPlayResult);
       sock.off(EVENTS.SESSION_ERROR, onError);
     };
-  }, [session_id, player_id]);
+  }, [session_id, auth_token]);
 
   const send = useCallback((event: string, payload?: any) => {
     const sock = sockRef.current ?? getSocket();

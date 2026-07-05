@@ -24,6 +24,20 @@ export function initDb(filepath: string): DB {
       PRIMARY KEY (session_id, player_id),
       FOREIGN KEY (session_id) REFERENCES sessions(id)
     );
+    -- Auth tokens bound to (session_id, player_id). The token is the only
+    -- thing the client needs to prove identity on the websocket; player_id
+    -- alone is no longer trusted. Tokens are 256-bit nanoids, opaque.
+    CREATE TABLE IF NOT EXISTS player_tokens (
+      token TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      player_id TEXT NOT NULL,
+      issued_at INTEGER NOT NULL,
+      FOREIGN KEY (session_id, player_id)
+        REFERENCES session_players(session_id, player_id)
+        ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_player_tokens_pair
+      ON player_tokens(session_id, player_id);
   `);
   return db;
 }

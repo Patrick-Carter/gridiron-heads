@@ -178,10 +178,70 @@ scripts/
   cleanup_sessions.ts # Cron: delete sessions inactive >7 days
 ```
 
+## Security model (Cloudflare Tunnel-era defaults)
+
+The deployment is exposed publicly through a Cloudflare Tunnel (bb.carterhub.net
+as of this writing). The server treats every incoming connection as hostile
+unless proven otherwise. These rules are non-negotiable — do not soften them
+without a security review:
+
+1. **Auth token = identity.** `POST /api/sessions` and `/api/sessions/:id/join`
+   return a 256-bit `auth_token` alongside `player_id`. The client persists
+   the token to `localStorage` (`gridiron:auth_token:<session_id>`) and sends
+   it on `session:join`. The server resolves the token back to
+   (session_id, player_id) on every connect — `player_id` from the client
+   alone is **never** trusted. This kills impersonation where a 3rd party who
+   learned both share-URL + a player's id could submit picks/audibles as them.
+
+2. **Origin allowlist.** `ALLOWED_ORIGINS` env var (comma-separated) gates
+   both Express `cors()` and the Socket.IO handshake. Default is
+   `https://bb.carterhub.net`. Requests with no `Origin` header (curl,
+   bots, server-to-server) are still allowed through so external machines
+   can keep connecting.
+
+3. **Rate limits.** 20 req/min/IP on `/api/sessions` (express-rate-limit)
+   and 30 socket connects/min/IP via a sliding-window limiter in
+   `server/src/security.ts`. Both gate on the actual TCP source — but
+   through Cloudflare the limiter counts the `CF-Connecting-IP`, which is
+   what `trust proxy` (see below) feeds Express.
+
+4. **`trust proxy` is a function, not a number.** It only trusts hops from
+   private/loopback IPs (RFC1918 + RFC4193), so cloudflared over the docker
+   bridge is honored but anything claiming to be a public-IP proxy is
+   ignored. Spiked in `server/src/security.ts:trustProxyFn`.
+
+5. **`display_name` is sanitized server-side.** Trim + collapse whitespace,
+   cap at 32 chars, allow only Unicode letters/marks/digits/punctuation/
+   symbols/separators via `normalizeDisplayName` in `server/src/security.ts`.
+   Length & char class are enforced — the route ignores whatever the client
+   sent.
+
+6. **`maxHttpBufferSize`** on Socket.IO is 64 KB (down from the 1 MB
+   default). Game payloads never exceed a few hundred bytes; the cap
+   prevents a malicious client from parking large buffers on a long-lived
+   socket.
+
+7. **Helmet + CORS + static SPA.** Helmet adds the standard security
+   headers (X-Content-Type-Options, X-DNS-Prefetch-Control,
+   Referrer-Policy: no-referrer, etc.). CSP is intentionally disabled
+   because the SPA + Tailwind combo relies on inline styles that a strict
+   CSP would break — we serve only our own bundle, so same-origin policy
+   is the defense-in-depth layer there.
+
+8. **In-memory room GC.** `server/src/app.ts:startRoomReaper` drops rooms
+   that have had no sockets for 90s. The DB row is the long-term canonical
+   state; the in-memory cache is purely transient. `last_activity_at`
+   is bumped on every meaningful event.
+
+9. **`GET /api/sessions/:id` is auth-gated.** No Bearer token → summary
+   only (phase + player ids, no names/draft/scores/history). With a valid
+   token → full state. This stops the endpoint from being a free session
+   probe.
+
 ## Test command cheat sheet
 
 ```bash
-# Run all tests (106 expected)
+# Run all tests (224 expected — 3 e2e + 9 routes + 28 game_machine + 18 cpu + 4 db + 1 app + audio + UI). The previous `server/tests/cpu_e2e.test.ts` (cpu-vs-human solo end-to-end driver) was retired because it was timing-flaky on the 2s + 4.5s server chain and inconsistent across hosts. The vs-CPU logic is still covered by the per-tick CPU unit tests under `server/tests/cpu.test.ts`.
 npx vitest run
 
 # Run a single file
