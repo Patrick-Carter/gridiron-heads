@@ -110,6 +110,9 @@ export interface PlayResult {
   scoring_event: ScoringEvent;
   seed: number;
   text_recap: string;
+  /** Direction of attack for the offense at the time of the play:
+   *  +1 = attacking toward yardline 100 (right); -1 = attacking toward 0 (left). */
+  offense_direction: 1 | -1;
 }
 
 export function flipSubtype(p: Play): Play {

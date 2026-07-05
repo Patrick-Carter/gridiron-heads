@@ -4,62 +4,81 @@ import { mulberry32 } from '@gridiron/shared';
 interface FieldProps {
   playResult: any | null;
   ballYardline: number;
-  possessionIdx: number;
+  possessionIdx: 0 | 1;
   isAnimating: boolean;
   onAnimationDone?: () => void;
 }
 
-/** Football positions on a 100x53.3 yard field, line of scrimmage at yardLine. */
+/** Football positions relative to the line of scrimmage.
+ *  Each x is in yards OFFSET from LOS (negative = behind LOS, positive = ahead).
+ *  Each y is normalized [0,1] vertically.
+ *  Direction of attack is handled at draw time. */
 interface Lineup {
-  qb: [number, number];
-  oline: [number, number][]; // 5
-  wr: [number, number][]; // 2
-  dline: [number, number][]; // 4
-  cb: [number, number][]; // 2
+  qb: [number, number];       // behind LOS
+  oline: [number, number][];  // 5, on the LOS
+  wr: [number, number][];     // 2, ahead of LOS, split wide
+  dline: [number, number][];  // 4, on the LOS (defense)
+  cb: [number, number][];     // 2, deep (defense)
 }
 
 const FIELD_W = 800;
 const FIELD_H = 400;
-const YARD_W = FIELD_W / 100; // 8 px per yard
+const YARD = FIELD_W / 100; // 8 px per yard
 
-/** Generate lineup positions in [0, 1] canvas-relative coords. */
-function buildLineup(yardLine: number, side: 'offense' | 'defense'): Lineup {
-  const los = yardLine; // 0..100
-  // Offense faces right (toward 100), defense faces left.
-  // Positions are normalized [0,1] of canvas dimensions.
-  // Line of scrimmage marker y-position
+/** Build offensive lineup (faces direction of attack).
+ *  QB 5 yds behind LOS, 5 O-Line on LOS, 2 WR 5 yds ahead at the sidelines. */
+function buildOffense(): Lineup {
   const yMid = 0.5;
-  if (side === 'offense') {
-    // O-Line: 5 across, just behind LOS
-    const oline: [number, number][] = [];
-    for (let i = 0; i < 5; i++) {
-      const t = (i + 0.5) / 5; // 0.1, 0.3, 0.5, 0.7, 0.9
-      oline.push([0.05 + t * 0.9, yMid - 0.08 + (i % 2) * 0.04]);
-    }
-    // QB: 5 yards behind center
-    const qb: [number, number] = [(los - 5) / 100, yMid];
-    // WR: 2 split wide, slightly ahead
-    const wr: [number, number][] = [
-      [(los + 3) / 100, 0.15], // top wide receiver
-      [(los + 3) / 100, 0.85], // bottom wide receiver
-    ];
-    return { qb, oline, wr, dline: [], cb: [] };
-  } else {
-    // Defense: D-Line on/near LOS, CBs deep and wide
-    const dline: [number, number][] = [];
-    for (let i = 0; i < 4; i++) {
-      const t = (i + 0.5) / 4;
-      dline.push([(los + 0.5) / 100, 0.25 + t * 0.5]);
-    }
-    const cb: [number, number][] = [
-      [(los + 12) / 100, 0.1],
-      [(los + 12) / 100, 0.9],
-    ];
-    return { qb: [0, 0], oline: [], wr: [], dline, cb };
+  const oline: [number, number][] = [];
+  // 5 linemen on the LOS, slightly staggered up/down for visual interest
+  for (let i = 0; i < 5; i++) {
+    const t = (i + 0.5) / 5;
+    oline.push([0, yMid - 0.10 + t * 0.20]); // 5 across at LOS (y spread)
   }
+  const qb: [number, number] = [-5, yMid];
+  const wr: [number, number][] = [
+    [5, 0.18],   // top wide receiver
+    [5, 0.82],   // bottom wide receiver
+  ];
+  return { qb, oline, wr, dline: [], cb: [] };
 }
 
-export default function Field({ playResult, ballYardline, isAnimating, onAnimationDone }: FieldProps) {
+/** Build defensive lineup. D-Line on LOS, CBs 8 yds deep and wide. */
+function buildDefense(): Lineup {
+  const dline: [number, number][] = [];
+  for (let i = 0; i < 4; i++) {
+    const t = (i + 0.5) / 4;
+    dline.push([0, 0.25 + t * 0.5]);
+  }
+  const cb: [number, number][] = [
+    [8, 0.12],
+    [8, 0.88],
+  ];
+  return { qb: [0, 0], oline: [], wr: [], dline, cb };
+}
+
+/** Convert a lineup position (yards-offset, y-normalized) + LOS + direction to canvas (x, y).
+ *  direction: +1 means offense attacks toward larger yardlines (right);
+ *              -1 means offense attacks toward smaller yardlines (left). */
+function toCanvas(
+  xOffsetYards: number,
+  yNorm: number,
+  losYardline: number,
+  direction: 1 | -1,
+): [number, number] {
+  const losPx = (losYardline / 100) * FIELD_W;
+  const x = losPx + xOffsetYards * YARD * direction;
+  const y = yNorm * FIELD_H;
+  return [x, y];
+}
+
+export default function Field({
+  playResult,
+  ballYardline,
+  possessionIdx,
+  isAnimating,
+  onAnimationDone,
+}: FieldProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
 
@@ -68,13 +87,16 @@ export default function Field({ playResult, ballYardline, isAnimating, onAnimati
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    // Between plays: draw field + static lineups
-    drawField(ctx, canvas, ballYardline);
-    const off = buildLineup(ballYardline, 'offense');
-    const def = buildLineup(ballYardline, 'defense');
-    drawPlayerSet(ctx, off, canvas.width, canvas.height, '#e6edf3');
-    drawPlayerSet(ctx, def, canvas.width, canvas.height, '#f85149');
-  }, [ballYardline]);
+    // Direction of attack for the current offense:
+    // possession_idx === 0 → offense attacks right (yardline 0→100)
+    // possession_idx === 1 → offense attacks left (yardline 100→0)
+    const direction: 1 | -1 = possessionIdx === 0 ? 1 : -1;
+    drawField(ctx, canvas, ballYardline, direction);
+    const off = buildOffense();
+    const def = buildDefense();
+    drawPlayerSet(ctx, off, ballYardline, direction, '#e6edf3');
+    drawPlayerSet(ctx, def, ballYardline, direction, '#f85149');
+  }, [ballYardline, possessionIdx]);
 
   useEffect(() => {
     if (!playResult || !isAnimating) return;
@@ -86,13 +108,15 @@ export default function Field({ playResult, ballYardline, isAnimating, onAnimati
     const seed = playResult.seed ?? 1;
     const start = performance.now();
     const duration = 1800;
+    // Direction comes from the play's offense_direction (captured at snap time on server)
+    const direction: 1 | -1 = (playResult.offense_direction ?? 1) as 1 | -1;
 
     const animate = (t: number) => {
       const elapsed = t - start;
       const progress = Math.min(1, elapsed / duration);
-      // During animation: draw field WITHOUT lineups, then overlay animated lineups
-      drawField(ctx, canvas, ballYardline);
-      drawPlay(ctx, canvas, playResult, seed, progress);
+      // During animation: field without lineups, then animated overlays
+      drawField(ctx, canvas, ballYardline, direction);
+      drawPlay(ctx, canvas, playResult, seed, progress, direction);
       if (progress < 1) {
         animationRef.current = requestAnimationFrame(animate);
       } else {
@@ -116,10 +140,15 @@ export default function Field({ playResult, ballYardline, isAnimating, onAnimati
   );
 }
 
-function drawField(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, ballYardline: number) {
+function drawField(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  ballYardline: number,
+  direction: 1 | -1,
+) {
   const w = canvas.width;
   const h = canvas.height;
-  // Field background
+  // Field background — fillRect clears any previous frame
   ctx.fillStyle = '#0a3d1f';
   ctx.fillRect(0, 0, w, h);
   // Yard lines every 10 yards
@@ -138,7 +167,7 @@ function drawField(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, bal
   ctx.fillRect(w - w / 20, 0, w / 20, h);
   // Line of scrimmage
   const losX = (ballYardline / 100) * w;
-  ctx.strokeStyle = '#fde047'; // bright yellow
+  ctx.strokeStyle = '#fde047';
   ctx.lineWidth = 2;
   ctx.setLineDash([6, 4]);
   ctx.beginPath();
@@ -148,10 +177,11 @@ function drawField(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, bal
   ctx.setLineDash([]);
   ctx.fillStyle = '#fde047';
   ctx.font = 'bold 11px monospace';
-  ctx.fillText('LOS', losX + 4, 14);
-  // First down marker (10 yards ahead)
-  const fdX = ((ballYardline + 10) / 100) * w;
-  if (fdX < w) {
+  ctx.fillText('LOS', losX + (direction === 1 ? 4 : -28), 14);
+  // First down marker — 10 yards AHEAD of LOS in direction of attack
+  const fdYardline = ballYardline + 10 * direction;
+  const fdX = (fdYardline / 100) * w;
+  if (fdX > 0 && fdX < w) {
     ctx.strokeStyle = '#fb923c';
     ctx.lineWidth = 2;
     ctx.setLineDash([4, 4]);
@@ -161,9 +191,9 @@ function drawField(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, bal
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = '#fb923c';
-    ctx.fillText('1ST', fdX - 22, h - 6);
+    ctx.fillText('1ST', fdX + (direction === 1 ? -22 : 4), h - 6);
   }
-  // Hash marks (top + bottom) — drawn here so they're visible during animation too
+  // Hash marks
   ctx.strokeStyle = 'rgba(255,255,255,0.25)';
   ctx.lineWidth = 1;
   for (let i = 0; i <= 10; i++) {
@@ -177,16 +207,35 @@ function drawField(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, bal
     ctx.lineTo(x, h * 0.68);
     ctx.stroke();
   }
-  // NOTE: lineups are drawn separately by the caller (either static via useEffect,
-  // or animated overlays via drawPlay during animation).
 }
 
-function drawPlayerSet(ctx: CanvasRenderingContext2D, lineup: Lineup, w: number, h: number, color: string) {
-  if (lineup.qb[0] > 0) drawPlayer(ctx, lineup.qb[0] * w, lineup.qb[1] * h, color, 6, 'Q');
-  for (const [x, y] of lineup.oline) drawPlayer(ctx, x * w, y * h, color, 5, 'O');
-  for (const [x, y] of lineup.wr) drawPlayer(ctx, x * w, y * h, color, 5, 'W');
-  for (const [x, y] of lineup.dline) drawPlayer(ctx, x * w, y * h, color, 5, 'D');
-  for (const [x, y] of lineup.cb) drawPlayer(ctx, x * w, y * h, color, 5, 'C');
+function drawPlayerSet(
+  ctx: CanvasRenderingContext2D,
+  lineup: Lineup,
+  losYardline: number,
+  direction: 1 | -1,
+  color: string,
+) {
+  if (lineup.qb[1] > 0 || lineup.qb[0] !== 0) {
+    const [x, y] = toCanvas(lineup.qb[0], lineup.qb[1], losYardline, direction);
+    drawPlayer(ctx, x, y, color, 7, 'Q');
+  }
+  for (const [xo, yn] of lineup.oline) {
+    const [x, y] = toCanvas(xo, yn, losYardline, direction);
+    drawPlayer(ctx, x, y, color, 6, 'O');
+  }
+  for (const [xo, yn] of lineup.wr) {
+    const [x, y] = toCanvas(xo, yn, losYardline, direction);
+    drawPlayer(ctx, x, y, color, 6, 'W');
+  }
+  for (const [xo, yn] of lineup.dline) {
+    const [x, y] = toCanvas(xo, yn, losYardline, direction);
+    drawPlayer(ctx, x, y, color, 6, 'D');
+  }
+  for (const [xo, yn] of lineup.cb) {
+    const [x, y] = toCanvas(xo, yn, losYardline, direction);
+    drawPlayer(ctx, x, y, color, 6, 'C');
+  }
 }
 
 function drawPlayer(
@@ -201,8 +250,12 @@ function drawPlayer(
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
+  // Black outline so dots stand out against the green field
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
   ctx.fillStyle = '#000';
-  ctx.font = 'bold 8px monospace';
+  ctx.font = 'bold 9px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(label, x, y);
@@ -216,31 +269,31 @@ function drawPlay(
   result: any,
   seed: number,
   progress: number,
+  direction: 1 | -1,
 ) {
   const w = canvas.width;
   const h = canvas.height;
-  const off = buildLineup(result.yardline_before, 'offense');
-  const def = buildLineup(result.yardline_before, 'defense');
+  const off = buildOffense();
+  const def = buildDefense();
   const playType = result.off_call?.parent as string;
   const sub = result.off_call?.sub as string;
   const yards = result.yards ?? 0;
-  const turnover = result.turnover;
+  const losYardline = result.yardline_before;
 
-  // Animate offense advancing by yards
-  drawAnimatedLineup(ctx, off, w, h, yards, progress, '#e6edf3', playType, sub);
-  drawAnimatedLineup(ctx, def, w, h, 0, progress, '#f85149', playType, sub);
+  // Draw animated offense + defense from the play's starting LOS
+  // For positive yards, offense advances in direction; for losses, retreats (negative).
+  drawAnimatedLineup(ctx, off, losYardline, direction, yards, progress, '#e6edf3', playType, sub);
+  drawAnimatedLineup(ctx, def, losYardline, direction, yards, progress, '#f85149', playType, sub);
 
   // Ball animation
-  const ballStartX = (result.yardline_before / 100) * w;
-  const ballEndX = ((result.yardline_before + Math.max(0, yards)) / 100) * w;
-  let ballX = ballStartX + (ballEndX - ballStartX) * progress;
+  const losPx = (losYardline / 100) * w;
+  const yardsPx = yards * YARD * direction * progress;
+  const ballX = losPx + yardsPx;
   let ballY = h * 0.5;
   if (playType === 'pass') {
-    // Arc trajectory
     ballY = h * 0.5 - Math.sin(progress * Math.PI) * (sub === 'deep' ? h * 0.4 : h * 0.15);
   } else if (playType === 'fg') {
     ballY = h * 0.5 - Math.sin(progress * Math.PI) * h * 0.45;
-    ballX = ballStartX + (w * 0.9 - ballStartX) * progress;
   }
   ctx.fillStyle = '#92400e';
   ctx.beginPath();
@@ -250,14 +303,11 @@ function drawPlay(
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // Receiver/WR catches ball at progress 1
+  // Catch flash on pass plays
   if (playType === 'pass' && progress > 0.6) {
-    // Flash at receiver location
-    const targetIdx = sub === 'deep' ? 0 : 0; // both WRs run same routes for simplicity
-    const wr = off.wr[targetIdx];
+    const wr = off.wr[0];
     if (wr) {
-      const rx = (wr[0] + (yards / 100)) * w;
-      const ry = wr[1] * h;
+      const [rx, ry] = toCanvas(wr[0] + yards, wr[1], losYardline, direction);
       ctx.strokeStyle = '#fde047';
       ctx.lineWidth = 3;
       ctx.beginPath();
@@ -266,19 +316,19 @@ function drawPlay(
     }
   }
 
-  // FG: ball near uprights at end
+  // FG: draw uprights at end zone in direction of attack
   if (playType === 'fg' && progress > 0.7) {
-    // Draw uprights at right end zone
+    const uprightX = direction === 1 ? w - 30 : 30;
     ctx.strokeStyle = result.scoring_event === 'fg' ? '#3fb950' : '#f85149';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(w - 30, h * 0.3);
-    ctx.lineTo(w - 30, h * 0.7);
+    ctx.moveTo(uprightX, h * 0.3);
+    ctx.lineTo(uprightX, h * 0.7);
     ctx.stroke();
   }
 
   // Turnover flash
-  if (turnover && progress > 0.5) {
+  if (result.turnover && progress > 0.5) {
     ctx.fillStyle = `rgba(248,81,73,${(progress - 0.5) * 2})`;
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = '#fff';
@@ -303,41 +353,46 @@ function drawPlay(
 function drawAnimatedLineup(
   ctx: CanvasRenderingContext2D,
   lineup: Lineup,
-  w: number,
-  h: number,
+  losYardline: number,
+  direction: 1 | -1,
   yards: number,
   progress: number,
   color: string,
   playType: string,
   sub: string,
 ) {
-  // Offense moves forward by yards (proportional to progress)
-  // Defense mostly stays put; D-Line may surge on run plays
-  const yardShift = (yards / 100) * w * progress;
+  // Offense advances by yards*progress (negative for losses, retreats)
+  const offShiftYards = yards * progress;
+  // Defense surge on run plays
+  const defShiftYards = playType === 'run' ? Math.max(0, yards) * 0.3 * progress : 0;
+  const defRetreatYards = playType === 'pass' ? Math.max(0, yards) * 0.2 * progress : 0;
 
-  if (lineup.qb[0] > 0) {
-    const x = lineup.qb[0] * w + yardShift;
-    const y = lineup.qb[1] * h;
-    drawPlayer(ctx, x, y, color, 6, 'Q');
+  // QB
+  if (lineup.qb[0] !== 0 || lineup.qb[1] !== 0) {
+    const [x, y] = toCanvas(lineup.qb[0] + offShiftYards, lineup.qb[1], losYardline, direction);
+    drawPlayer(ctx, x, y, color, 7, 'Q');
   }
-  for (const [nx, ny] of lineup.oline) {
-    const x = nx * w + yardShift * 0.5; // O-line moves slower
-    const y = ny * h;
-    drawPlayer(ctx, x, y, color, 5, 'O');
+  // O-Line (slower shift than skill positions)
+  for (const [xo, yn] of lineup.oline) {
+    const [x, y] = toCanvas(xo + offShiftYards * 0.6, yn, losYardline, direction);
+    drawPlayer(ctx, x, y, color, 6, 'O');
   }
-  for (const [nx, ny] of lineup.wr) {
-    const x = nx * w + yardShift * (playType === 'pass' ? 1.2 : 0.6);
-    const y = ny * h - (sub === 'deep' ? Math.sin(progress * Math.PI) * 30 : 0);
-    drawPlayer(ctx, x, y, color, 5, 'W');
+  // WR (run full routes)
+  for (const [xo, yn] of lineup.wr) {
+    const routeShift = offShiftYards * (playType === 'pass' ? 1.2 : 0.7);
+    const arc = sub === 'deep' ? Math.sin(progress * Math.PI) * 25 * direction : 0;
+    const [x, y] = toCanvas(xo + routeShift, yn, losYardline, direction);
+    // Apply arc as y offset (positive arc = up the field visually)
+    drawPlayer(ctx, x + arc, y - Math.abs(arc) * 0.3, color, 6, 'W');
   }
-  for (const [nx, ny] of lineup.dline) {
-    const x = nx * w - (playType === 'run' ? yardShift * 0.3 * progress : 0);
-    const y = ny * h;
-    drawPlayer(ctx, x, y, color, 5, 'D');
+  // D-Line (surge forward on run plays)
+  for (const [xo, yn] of lineup.dline) {
+    const [x, y] = toCanvas(xo + defShiftYards * direction, yn, losYardline, direction);
+    drawPlayer(ctx, x, y, color, 6, 'D');
   }
-  for (const [nx, ny] of lineup.cb) {
-    const x = nx * w - (playType === 'pass' ? yardShift * 0.2 * progress : 0);
-    const y = ny * h;
-    drawPlayer(ctx, x, y, color, 5, 'C');
+  // CBs (retreat on pass plays)
+  for (const [xo, yn] of lineup.cb) {
+    const [x, y] = toCanvas(xo + defRetreatYards * direction, yn, losYardline, direction);
+    drawPlayer(ctx, x, y, color, 6, 'C');
   }
 }

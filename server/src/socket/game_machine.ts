@@ -302,6 +302,7 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       yards: 0,
       scoring_event: fg.make ? 'fg' : null,
       seed,
+      offense_direction: (game.possession_idx === 0 ? 1 : -1) as 1 | -1,
       text_recap: fg.make
         ? `FIELD GOAL IS GOOD! (${fg.total} > ${yards_to_endzone})`
         : `FG missed (${fg.total} ≤ ${yards_to_endzone})`,
@@ -357,6 +358,7 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       yards: punt_yards,
       scoring_event: null,
       seed,
+      offense_direction: (game.possession_idx === 0 ? 1 : -1) as 1 | -1,
       text_recap: turnover
         ? `PUNT BLOCKED! Defense takes over.`
         : `Punt of ${punt_yards} yards.`,
@@ -387,6 +389,8 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   // Run/Pass: standard resolvePlay
   const offSkill = offense.off_skill?.skill ?? 60;
   const defSkill = defense.def_skill?.skill ?? 60;
+  // Capture direction of attack for the offense BEFORE mutating state
+  const offense_direction: 1 | -1 = (game.possession_idx === 0 ? 1 : -1) as 1 | -1;
   const resolve = resolvePlay({
     off_skill: offSkill,
     def_skill: defSkill,
@@ -468,6 +472,7 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     yards: resolve.yards,
     scoring_event,
     seed,
+    offense_direction,
     text_recap: recapText(resolve, scoring_event, game.down, game.distance),
   };
   clearAudibles(game);
