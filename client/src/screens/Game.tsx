@@ -169,27 +169,6 @@ export default function Game({
             scrubProgress={scrubProgress}
             setScrubProgress={setScrubProgress}
           />
-
-          {lastPlayResult && !isAnimating && (
-            <div className="panel-flash text-base text-center space-y-2">
-              <div className="panel-titlebar !mt-0"><span>Your Play</span><span className="text-xs">Recap</span></div>
-              {/* Offense vs defense call summary (D029) */}
-              <div className="flex items-center justify-center gap-2 text-base">
-                <span className="chip !bg-lime">YOU: {lastPlayResult.off_call?.parent?.toUpperCase()} {lastPlayResult.off_call?.sub?.toUpperCase()}</span>
-                <span className="text-ink/60 font-black">vs</span>
-                <span className="chip !bg-maroon !text-cream">DEF: {lastPlayResult.def_call?.parent?.toUpperCase()} {lastPlayResult.def_call?.sub?.toUpperCase()}</span>
-              </div>
-              {(lastPlayResult.off_audible || lastPlayResult.off_fake_audible) && (
-                <div className="text-xs font-bold text-maroon">
-                  🗣 {lastPlayResult.off_fake_audible ? 'FAKE' : 'AUDIBLE →'} {lastPlayResult.off_audible?.sub?.toUpperCase?.() || ''}
-                </div>
-              )}
-              <div className="text-sm font-bold">
-                <span className="sticker mr-2">PLAY!</span>
-                {lastPlayResult.text_recap}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Right: Controls + Log */}
@@ -316,7 +295,7 @@ export default function Game({
             </div>
           )}
 
-          <PlayLog history={game.history || []} myIdx={myIdx} />
+          <PlayLog history={game.history || []} />
         </div>
       </div>
 
