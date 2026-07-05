@@ -175,14 +175,31 @@ describe('Play resolution', () => {
     room.game!.teams[1].def_skill = { id: 'DEF', group: 'DEF_SKILL', skill: 50, name: 'B' };
     room.pending_schemes[room.players[0].id] = { parent: 'run', sub: 'inside' };
     room.pending_schemes[room.players[1].id] = { parent: 'pass', sub: 'deep' };
-    const before = room.game!.scores[0];
-    const { result, scoring_event } = resolveCurrentPlay(room, 1);
-    if (scoring_event === 'td') {
-      expect(room.game!.scores[0]).toBe(before + 1);
-    } else {
-      // accept no TD on this seed but result still valid
-      expect(result.yards).toBeGreaterThanOrEqual(0);
+    // Search for a seed that produces a TD — set offense to skill 100, defense to 1
+    let found = false;
+    for (let s = 1; s < 200; s++) {
+      const r = setupReadyToSnapRoom();
+      r.game!.ball_yardline = 99;
+      // Set BOTH teams' skills — the offense is whichever has the ball
+      r.game!.teams[0].off_skill = { id: 'OFF0', group: 'OFF_SKILL', skill: 100, name: 'A' };
+      r.game!.teams[0].def_skill = { id: 'DEFD0', group: 'DEF_SKILL', skill: 1, name: 'A' };
+      r.game!.teams[1].off_skill = { id: 'OFF1', group: 'OFF_SKILL', skill: 100, name: 'B' };
+      r.game!.teams[1].def_skill = { id: 'DEFD1', group: 'DEF_SKILL', skill: 1, name: 'B' };
+      const offIdx = r.game!.possession_idx;
+      const defIdx = offIdx === 0 ? 1 : 0;
+      const offPlayerId = r.players[offIdx].id;
+      const defPlayerId = r.players[defIdx].id;
+      r.pending_schemes[offPlayerId] = { parent: 'run', sub: 'inside' };
+      r.pending_schemes[defPlayerId] = { parent: 'pass', sub: 'deep' };
+      const { result, scoring_event } = resolveCurrentPlay(r, s);
+      if (scoring_event === 'td') {
+        expect(r.game!.scores[offIdx]).toBe(1);
+        expect(result.scoring_event).toBe('td');
+        found = true;
+        break;
+      }
     }
+    expect(found).toBe(true);
   });
 });
 

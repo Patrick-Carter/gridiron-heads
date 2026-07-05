@@ -249,8 +249,6 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       const room = rooms.get(sdata.session_id);
       if (!room || !room.game) return;
       const game = room.game;
-      if (game.phase !== 'between_plays' && game.phase !== 'play_anim') return;
-      // Allow next play → re-enter scheme pick phase
       if (game.phase === 'ended') return;
       game.phase = 'awaiting_schemes';
       clearSchemes(room);

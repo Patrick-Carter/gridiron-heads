@@ -30,8 +30,6 @@ export function createApp(opts: CreateAppOpts = {}): Express {
   const clientDist = path.resolve(__dirname, '../../client/dist');
   app.use(express.static(clientDist, { fallthrough: true }));
 
-  // Make db accessible to socket handlers
-  (app as any).db = db;
   return app;
 }
 
@@ -39,7 +37,12 @@ export interface CreateServerOpts {
   db?: Database;
 }
 
-export function createServer(opts: CreateServerOpts = {}) {
+export function createServer(opts: CreateServerOpts = {}): {
+  app: Express;
+  http_server: http.Server;
+  io: IOServer;
+  db: Database;
+} {
   const db = opts.db ?? initDb(path.resolve(process.cwd(), 'server/data/gridiron.db'));
   const app = createApp({ db });
   const http_server = http.createServer(app);
