@@ -17,8 +17,14 @@ export interface ResolveInput {
   seed: number;
   /** Ball yardline before the play (0..100). Used to cap yards at the remaining
    *  distance to the goal line so a +20 gain from the 75 doesn't leave the ball
-   *  at 95 with the recap reading "Gain of 20" when only 25 yards were possible. */
+   *  at 95 with the recap reading "Gain of 20" when only 25 yards were possible.
+   *  ABSOLUTE field position — the resolver also needs `offense_direction` to
+   *  know which end zone is the offense's target. */
   yardline_before?: number;
+  /** Direction the offense is attacking: +1 toward yardline 100, -1 toward 0.
+   *  Defaults to +1 for backwards compatibility with callers that don't yet
+   *  pass it (test fixtures). */
+  offense_direction?: 1 | -1;
 }
 
 export interface ResolveOutput {
@@ -158,15 +164,22 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
       yards = -(1 + Math.floor(rng() * maxLoss));
     }
     yards = applyYardsPct(yards, input.qb_off_modifiers, parent);
-    // Cap yards at the remaining distance to the goal line so a play can't
-    // produce an impossible gain (e.g., +20 from the 75-yard line). The excess
-    // should have been a TD; we trim down to a 1st & goal at the 1.
+    // Cap yards at the remaining distance to the OFFENSE'S goal line so a play
+    // can't produce an impossible gain (e.g., +20 from the 75-yard line when
+    // attacking toward 100 → 25yds remaining; same for -1 direction at the 25
+    // → only 25yds to attack the OPPOSITE end zone). The excess should have
+    // been a TD; we trim down to a 1st & goal at the 1.
     if (yards > 0 && typeof input.yardline_before === 'number') {
-      const maxGain = 100 - input.yardline_before;
+      const dir = input.offense_direction ?? 1;
+      const maxGain = dir === 1 ? 100 - input.yardline_before : input.yardline_before;
       if (yards > maxGain) yards = Math.max(1, maxGain);
     } else if (yards < 0 && typeof input.yardline_before === 'number') {
-      // Cap losses at the distance to your own goal line (yardline 0)
-      const maxLoss = input.yardline_before;
+      // Cap losses at the distance to the OFFENSE'S OWN goal line.
+      // +1 offense at yardline 25 → can lose at most 25yds (own end zone = safety).
+      // -1 offense at yardline 75 → can lose at most 25yds (own end zone = safety).
+      const dir = input.offense_direction ?? 1;
+      const ownGoalYardline = dir === 1 ? 0 : 100;
+      const maxLoss = Math.abs(input.yardline_before - ownGoalYardline);
       if (-yards > maxLoss) yards = -Math.max(1, maxLoss);
     }
   }
