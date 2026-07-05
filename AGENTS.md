@@ -25,8 +25,19 @@ npm start          # serves client dist + API from server on :3000
 
 These are the things that **will** trip you up if you don't know them:
 
-### 1. Always-attack-right — no direction mirroring
-Both teams always attack right (toward yardline 100). The canvas never mirrors. I tried `ctx.scale(-1, 1)` mirroring for team 1 attacking left and it produced unfixable bugs in lineup positions, label placement, and LOS marker direction. **Don't reintroduce direction logic.** `DIRECTION = 1` in Field.tsx is hardcoded. Server sends `offense_direction: 1` on every PlayResult. If someone asks "what about a left direction?" the answer is **no**.
+### 1. Direction model — possession-based, no canvas mirror
+- `ball_yardline` is the ABSOLUTE field position (0..100).
+- `possession_idx` decides who attacks which end zone:
+  - `possession_idx === 0` → offense attacks right toward yardline 100 (`offense_direction = +1`)
+  - `possession_idx === 1` → offense attacks left  toward yardline   0 (`offense_direction = -1`)
+- After EVERY change of possession (TD, safety, turnover, turnover-on-downs) the new offense gets a fresh 1st & 10 from the ball's current absolute spot. They attack the OPPOSITE end zone automatically because `offenseDirection` flips with `possession_idx`.
+- The canvas is NEVER mirrored (`ctx.scale(-1, 1)` is still banned — it broke labels in D020). Only the `direction` multiplier on `xOffsetYards * YARD` flips sign in the renderer. Labels (LOS, 1ST) are drawn at pixel coords from absolute positions.
+- Helpers in `shared/src/game_state.ts`:
+  - `offenseDirection(state)` → `+1 | -1`
+  - `yardsToEndzone(state)` → 0..100, direction-aware
+  - `flipPossession(state)` → flips idx, sets 1st & 10, preserves `ball_yardline`
+- The resolver takes `offense_direction` (defaults to `+1` for back-compat) and caps positive/negative yards against the offense's target/own goal line respectively.
+- D020 (always-attack-right) is REVERTED. The bug it tried to fix — `ctx.scale(-1, 1)` breaking label/LOS marker direction — is fixed differently: we don't mirror the canvas, we just flip the sign of the x-offset multiplier, which is a pure number-flip and can't break label placement.
 
 ### 2. Downs progression bug class
 The `resolveCurrentPlay` function MUST compute `next_possession/next_yardline/next_down/next_distance` BEFORE mutating `game`, then apply them all at once. The original bug discarded `advanceAfterPlay`'s return value and never wrote `game.down` back — ball was stuck at 1st & 10 forever. The fixed version lives in `server/src/socket/game_machine.ts` around `run/pass` branch. Don't refactor it without writing tests for:
@@ -89,7 +100,7 @@ HTTP `POST /api/sessions` and `/api/sessions/:id/join` write to SQLite. When the
 
 ## What NOT to do
 
-- ❌ Don't add a left-attacking mode. The mirror approach was attempted and failed.
+- ❌ Don't mirror the canvas with `ctx.scale(-1, 1)` (broke labels in D020 — reverted). The direction-flip is achieved by multiplying the x-offset by `direction`, not by mirroring.
 - ❌ Don't clamp negative-yard distance to the old distance (loses NFL rule).
 - ❌ Don't check `result.turnover` first in the scoring flash — always check `scoring_event` first.
 - ❌ Don't write `game.down` directly in `resolveCurrentPlay` — always go through `advanceAfterPlay`'s `next` object.
@@ -97,6 +108,8 @@ HTTP `POST /api/sessions` and `/api/sessions/:id/join` write to SQLite. When the
 - ❌ Don't allow audibles on punt/FG — server rejects, client UI should hide them.
 - ❌ Don't hardcode yardage ranges in the resolver without considering sub-match tier.
 - ❌ Don't draw the O-Line spread across multiple yardlines (vertical column) — keep tight band.
+- ❌ Don't hardcode `offense_direction: 1` in PlayResult — derive from `offenseDirection(game)`.
+- ❌ Don't reset `ball_yardline = 100 - old` on turnover — the field is absolute now; the direction flip is what changes who drives how far.
 
 ## File map
 

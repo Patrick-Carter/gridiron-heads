@@ -106,13 +106,14 @@ parent right but sub wrong. User feedback drove the 3-tier split.
 - Negative gains: ≥ -(yardline_before)
 **Rationale:** A +20 gain from the 75 left the ball at 95 with "Gain of 20" — impossible.
 
-## D020 — 2026-07-04 — Yardline always right-driven (ACCEPTED)
+## D020 — 2026-07-04 — Yardline always right-driven (SUPERSEDED by D032)
 **Decision:** Both teams always attack right toward yardline 100. The canvas never
 mirrors. `DIRECTION = 1` hardcoded in Field.tsx. `offense_direction = 1` always in
 PlayResult.
 **Rationale:** Tried mirroring the canvas when team 1 attacked left (ctx.scale(-1, 1))
 — produced unfixable bugs in lineup positions, label placement, LOS marker direction.
 Reverted to always-right. Simpler, less buggy.
+**Superseded by:** D032 — direction-flip via sign-multiplier (not canvas mirror) is safe.
 
 ## D021 — 2026-07-04 — Auto-advance flow (no Next Play click) (ACCEPTED)
 **Decision:** Server chains two setTimeouts per snap:
@@ -298,3 +299,45 @@ without throwing.
 phase (waiting / ready / recap) makes the role-tinted call visible.
 **Tests:** No automated UI test (per AGENTS.md "playable end-to-end"
 rule — visual smoke during dev is sufficient).
+
+## D032 — 2026-07-05 — Possession-based direction model (ACCEPTED)
+**Decision:** `ball_yardline` is the ABSOLUTE field position (0..100).
+`possession_idx` determines who attacks which end zone:
+  - `possession_idx === 0` → offense attacks right toward yardline 100, `offense_direction = +1`
+  - `possession_idx === 1` → offense attacks left  toward yardline   0, `offense_direction = -1`
+
+After every change of possession (TD, safety, turnover, turnover-on-downs) the new
+offense gets a fresh 1st & 10 from the ball's current absolute spot. They attack the
+OPPOSITE end zone automatically because `offenseDirection` flips with `possession_idx`.
+
+Helpers in `shared/src/game_state.ts`:
+- `offenseDirection(state)` → `+1 | -1`
+- `yardsToEndzone(state)` → 0..100, direction-aware (replaces `100 - ball_yardline`)
+- `flipPossession(state)` → flips idx, sets 1st & 10, preserves `ball_yardline`
+
+The resolver takes `offense_direction` (defaults to `+1` for back-compat with test
+fixtures) and caps positive/negative yards against the offense's target/own goal line
+respectively.
+
+**Why this supersedes D020:** D020's bug — `ctx.scale(-1, 1)` broke label/LOS marker
+direction — is fixed by NOT mirroring the canvas. The renderer takes a `direction`
+parameter and flips the sign of `xOffsetYards * YARD` only. Labels are drawn at pixel
+coords derived from absolute positions. Sign-flipping a number can't break label
+placement the way `ctx.scale(-1, 1)` did.
+
+**Bug fixes this addresses:**
+- "1st & 10 @ 76" — yardline display now only shown when ball is between 10..90 and
+  distance ≥ 10 (otherwise LOS marker on canvas is enough).
+- Turnover from own 25 → opponent gets ball at yardline 25 but now attacks toward
+  THEIR target end zone (75 yards to go for a TD), not 25.
+- Teams drive in both directions instead of always-right.
+
+**Tests:** 121/121 vitest passing (was 111; +10 direction-aware cases).
+Manual smoke: 2 browser sessions needed to verify both teams. Pending.
+
+**Rollback:** Tag `pre-field-direction-fix` at commit `dc55371` (v0.5). To revert:
+`git reset --hard pre-field-direction-fix`. Each step is independently revertable:
+1. `5350035` — shared model
+2. `151830f` — server play resolution
+3. `b9601d0` — client renderer + HUD
+4. `86a3dec` — direction-aware tests
