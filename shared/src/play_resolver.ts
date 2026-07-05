@@ -56,14 +56,15 @@ export interface ResolveOutput {
   seed: number;
 }
 
-// === Line roll knobs (D-LINE / O-LINE mechanic) ==============================
-/** Minimum skill gap to trigger ANY line roll. Below this the trenches stay
- *  out of the rng stream so common plays don't shift downstream seed rolls. */
-export const LINE_GAP_LEAN = 20;
-/** Gap at which the line roll FLIPS the outcome (blow-up / stuff) instead of
- *  just nudging yardage. */
-export const LINE_GAP_DOMINATE = 40;
-// =============================================================================
+// === Line roll (D-LINE / O-LINE mechanic) ==============================
+// The line rolls every play on run/pass (same pattern as OFF_SKILL /
+// DEF_SKILL / KICKER). The PER-PLAY ROLL GAP decides the regime — not the
+// draft-time skill gap. A bad-draft line can still catch a break per play
+// (roll high while the good-draft line rolls low); a great-draft line can
+// still lose a play. The trenches are per-play, not per-game.
+export const LINE_ROLL_GAP_LEAN = 5;     // roll gap for "lean" (yardage nudge)
+export const LINE_ROLL_GAP_DOMINATE = 15; // roll gap for "dominate" (flip outcome)
+// ======================================================================
 
 function applyPctMods(
   base: number,
@@ -149,33 +150,36 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
   }
 
   // === Line roll (D-LINE / O-LINE mechanic) =================================
-  // Only consumes rng when the skill gap crosses LINE_GAP_LEAN. Below that the
-  // trenches are dormant — common plays stay seed-stable for the downstream
-  // tests / replays.
+  // Roll every play on run/pass — same pattern as the skill rolls. The
+  // PER-PLAY roll gap (not the draft-time skill gap) decides the regime so
+  // a bad-draft team isn't permanently locked out. Both sides roll
+  // [0, line_skill]; ties and small roll gaps fall through to the existing
+  // parent/sub math with no narrative mention.
   let line_winner: 'offense' | 'defense' | null = null;
   let line_roll_gap = 0;
   let line_regime: 'lean' | 'dominate' | null = null;
-  // Track whether the line DOMINATED and forced a specific outcome — used
-  // downstream by the yardage tiers + recap text.
-  let line_dominated_offense = false; // offense dominates line → defense suffers
-  let line_dominated_defense = false; // defense dominates line → offense suffers
+  let line_dominated_offense = false;
+  let line_dominated_defense = false;
 
   if (parent === 'run' || parent === 'pass') {
     const off_line_skill = input.off_line_skill ?? 60;
     const def_line_skill = input.def_line_skill ?? 60;
-    const skill_gap = Math.abs(off_line_skill - def_line_skill);
-    if (skill_gap >= LINE_GAP_LEAN) {
-      const off_line_roll = Math.floor(rng() * (off_line_skill + 1));
-      const def_line_roll = Math.floor(rng() * (def_line_skill + 1));
-      // Tie → no effect (gap stays zero, line is dormant this play).
-      if (off_line_roll !== def_line_roll) {
-        const offense_line_won = off_line_roll > def_line_roll;
-        line_winner = offense_line_won ? 'offense' : 'defense';
-        line_roll_gap = Math.abs(off_line_roll - def_line_roll);
-        line_regime = skill_gap >= LINE_GAP_DOMINATE ? 'dominate' : 'lean';
-        line_dominated_offense = offense_line_won && line_regime === 'dominate';
-        line_dominated_defense = !offense_line_won && line_regime === 'dominate';
+    const off_line_roll = Math.floor(rng() * (off_line_skill + 1));
+    const def_line_roll = Math.floor(rng() * (def_line_skill + 1));
+    if (off_line_roll !== def_line_roll) {
+      const offense_line_won = off_line_roll > def_line_roll;
+      line_winner = offense_line_won ? 'offense' : 'defense';
+      line_roll_gap = Math.abs(off_line_roll - def_line_roll);
+      if (line_roll_gap >= LINE_ROLL_GAP_DOMINATE) {
+        line_regime = 'dominate';
+        line_dominated_offense = offense_line_won;
+        line_dominated_defense = !offense_line_won;
+      } else if (line_roll_gap >= LINE_ROLL_GAP_LEAN) {
+        line_regime = 'lean';
       }
+      // roll_gap < LINE_ROLL_GAP_LEAN → line_winner/line_roll_gap still set,
+      // line_regime stays null. The yardage tiers and recap treat this the
+      // same as no line roll — common plays don't get a "lean" nudge.
     }
   }
   // ===========================================================================

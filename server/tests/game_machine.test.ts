@@ -209,6 +209,10 @@ describe('Play resolution', () => {
   it('full mismatch rewards offense: average yards are much higher than matched-parent', () => {
     // Same skills. With matching parents, yardage depends on fair roll.
     // With mismatch, the bonus kicks in and average gain should be > matched.
+    // With the line mechanic, mismatch plays can now also produce losses when
+    // the D-line dominates — we expect up to ~30% of non-turnover mismatch
+    // plays to be stuffs (line_blow_up). Avg mismatch gain should still beat
+    // matched gain by a wide margin.
     let matchedTotal = 0;
     let matchedCount = 0;
     let mismatchTotal = 0;
@@ -239,11 +243,16 @@ describe('Play resolution', () => {
     const matchedAvg = matchedCount > 0 ? matchedTotal / matchedCount : 0;
     const mismatchAvg = mismatchCount > 0 ? mismatchTotal / mismatchCount : 0;
     expect(mismatchAvg).toBeGreaterThan(matchedAvg + 3);
-    // Mismatch should almost never result in a loss — at most 5% of plays
-    expect(mismatchLossCount / mismatchCount).toBeLessThan(0.10);
+    // With line mechanic, mismatch plays CAN be losses (line stuffs).
+    // Allow up to 35% loss rate — dominated-by-line stuffs.
+    expect(mismatchLossCount / mismatchCount).toBeLessThan(0.35);
   });
 
-  it('inside run vs deep pass: nearly always gains yards', () => {
+  it('inside run vs deep pass: usually gains yards (line stuffs can happen)', () => {
+    // With default 60/60 line skills, defense dominates ~28% of plays
+    // (line roll gap >= 15 happens ~56% of the time, ~half of those are
+    // defense winning). Combined with ~10% turnover rate on full mismatch,
+    // expect roughly 60% positive yard rate.
     let gained = 0;
     let total = 0;
     for (let i = 1; i < 200; i++) {
@@ -254,8 +263,7 @@ describe('Play resolution', () => {
       total++;
       if (!result.turnover && result.yards > 0) gained++;
     }
-    // At least 80% should result in positive yards
-    expect(gained / total).toBeGreaterThan(0.80);
+    expect(gained / total).toBeGreaterThan(0.55);
   });
 
   it('yards capped at remaining distance to end zone (no impossible gains)', () => {

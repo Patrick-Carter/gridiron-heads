@@ -18,7 +18,10 @@ describe('resolvePlay', () => {
     expect(r.seed).toBe(1);
   });
 
-  it('parent+sub match → turnover rate ≈ 25%', () => {
+  it('parent+sub match → turnover rate ≈ 28% (25% base + line-bumped fumbles)', () => {
+    // With default 60/60 line skills, defense dominates the line on ~19% of
+    // plays → +15% fumble chance on those → net ~28% turnover. The 22-28%
+    // bound from before the line mechanic is now 25-31%.
     let tos = 0;
     const TRIALS = 2000;
     for (let i = 0; i < TRIALS; i++) {
@@ -32,11 +35,12 @@ describe('resolvePlay', () => {
       if (r.turnover) tos++;
     }
     const rate = tos / TRIALS;
-    expect(rate).toBeGreaterThan(0.22);
-    expect(rate).toBeLessThan(0.28);
+    expect(rate).toBeGreaterThan(0.25);
+    expect(rate).toBeLessThan(0.31);
   });
 
-  it('parent-only match → turnover rate ≈ 5%', () => {
+  it('parent-only match → turnover rate ≈ 8% (5% base + line-bumped fumbles)', () => {
+    // Same line-bump logic as above: 5% + ~3% = ~8%.
     let tos = 0;
     const TRIALS = 2000;
     for (let i = 0; i < TRIALS; i++) {
@@ -50,11 +54,15 @@ describe('resolvePlay', () => {
       if (r.turnover) tos++;
     }
     const rate = tos / TRIALS;
-    expect(rate).toBeGreaterThan(0.03);
-    expect(rate).toBeLessThan(0.07);
+    expect(rate).toBeGreaterThan(0.05);
+    expect(rate).toBeLessThan(0.11);
   });
 
-  it('no match → turnover rate = 0%', () => {
+  it('no parent match → turnover ONLY from line-dominated fumbles (~3%)', () => {
+    // Previously 0% turnover on full mismatch (defense out of position).
+    // Now: defense dominating the line adds a +15% fumble chance per play
+    // (~19% of plays with 60/60 lines → ~3% net turnover). No match still
+    // caps the line at this single source of fumbles.
     let tos = 0;
     const TRIALS = 2000;
     for (let i = 0; i < TRIALS; i++) {
@@ -67,7 +75,9 @@ describe('resolvePlay', () => {
       });
       if (r.turnover) tos++;
     }
-    expect(tos).toBe(0);
+    const rate = tos / TRIALS;
+    expect(rate).toBeGreaterThan(0.01);
+    expect(rate).toBeLessThan(0.06);
   });
 
   it('audible flips sub only (never parent)', () => {
@@ -83,7 +93,9 @@ describe('resolvePlay', () => {
     expect(r.effective_off_play.sub).toBe('short');
   });
 
-  it('QB turnover_chance_pct +50 halves the 25% turnover rate', () => {
+  it('QB turnover_chance_pct +50 ≈ halves the turnover rate', () => {
+    // The mod halves the 25% baseline; the line-bumped portion is also
+    // halved (mod applies after the +15%). Net is ~half of the pre-mod rate.
     let withMod = 0;
     let withoutMod = 0;
     const TRIALS = 2000;
@@ -109,8 +121,9 @@ describe('resolvePlay', () => {
       });
       if (r.turnover) withoutMod++;
     }
-    expect(withMod / TRIALS).toBeLessThan(withoutMod / TRIALS);
-    expect(withMod / TRIALS).toBeLessThan(0.15); // ~12.5%
+    expect(withMod).toBeLessThan(withoutMod);
+    // Pre-mod was 22-28% (~25%); halved with mod → ~12.5%, allow 9-17%.
+    expect(withMod / TRIALS).toBeLessThan(0.17);
   });
 
   it('fake audible: defense CAN audible even though off_play unchanged', () => {

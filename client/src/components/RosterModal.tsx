@@ -128,7 +128,7 @@ export default function RosterModal({
                           ⚡ skill {opt.skill}
                           {(key === 'O_LINE' || key === 'D_LINE') && (
                             <span className="ml-1 text-maroon">
-                              · trench gap ≥ {(key === 'O_LINE' ? 20 : 20)} = line rolls
+                              · rolls [0-{opt.skill}] every play
                             </span>
                           )}
                         </div>
