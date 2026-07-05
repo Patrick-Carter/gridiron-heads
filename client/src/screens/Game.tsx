@@ -152,10 +152,16 @@ export default function Game({
                 setCanReplay(false);
                 send(EVENTS.NEXT_PLAY);
               }}
-              className="w-full bg-accent text-bg font-bold py-3 rounded hover:opacity-90"
+              className="w-full bg-panel border border-accent text-accent font-bold py-3 rounded hover:bg-accent hover:text-bg"
             >
-              Next Play
+              Skip wait
             </button>
+          )}
+          {game.phase === 'play_anim' && (
+            <div className="text-center text-fg/40 text-xs">Next play loading…</div>
+          )}
+          {game.phase === 'between_plays' && (
+            <div className="text-center text-fg/40 text-xs">Next play in 2.5s…</div>
           )}
           <PlayLog history={game.history || []} myIdx={myIdx} />
         </div>

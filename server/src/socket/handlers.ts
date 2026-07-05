@@ -238,21 +238,32 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       game.phase = 'play_anim';
       io.to(`session:${sdata.session_id}`).emit('play:result', { result });
       io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
-      // After the client animation completes, server transitions to between_plays
+      // Auto-flow: play_anim → between_plays → awaiting_schemes without requiring
+      // any client to click "Next Play". The defense doesn't need to manually advance.
+      const sid = sdata.session_id;
       setTimeout(() => {
         if (room.game?.phase === 'play_anim') {
           room.game.phase = 'between_plays';
-          io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
+          io.to(`session:${sid}`).emit('session:state', snapshot(room));
         }
       }, 2000);
+      setTimeout(() => {
+        if (room.game?.phase === 'between_plays') {
+          room.game.phase = 'awaiting_schemes';
+          clearSchemes(room);
+          io.to(`session:${sid}`).emit('session:state', snapshot(room));
+        }
+      }, 4500);
     });
 
     socket.on('game:next_play', () => {
+      // Kept for backward compat — skip the between_plays delay if explicitly clicked.
       if (!sdata.session_id) return;
       const room = rooms.get(sdata.session_id);
       if (!room || !room.game) return;
       const game = room.game;
       if (game.phase === 'ended') return;
+      if (game.phase !== 'between_plays' && game.phase !== 'play_anim') return;
       game.phase = 'awaiting_schemes';
       clearSchemes(room);
       io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));

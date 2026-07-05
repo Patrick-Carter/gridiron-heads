@@ -27,37 +27,38 @@ const YARD = FIELD_W / 100; // 8 px per yard
 
 /** Build offensive lineup.
  *  Offense lines up BEHIND the LOS (x offsets are negative or zero).
- *  - QB: 5 yards behind LOS
- *  - O-Line: 5 across on the LOS
- *  - WR: slot/tight alignment, 2 yds behind LOS at the sidelines */
+ *  - QB: 5 yards behind LOS, centered
+ *  - O-Line: 5 across on the LOS, tight horizontal row
+ *  - WR: 2 wide receivers split to the sidelines, 3 yds behind LOS */
 function buildOffense(): Lineup {
-  const yMid = 0.5;
+  const yMid = 0.50;
   const oline: [number, number][] = [];
-  // 5 linemen on the LOS, spread across the field vertically for visual interest
+  // 5 linemen on the LOS, tightly packed vertically (they're a horizontal line on the field)
   for (let i = 0; i < 5; i++) {
-    const t = (i + 0.5) / 5;
-    oline.push([0, 0.30 + t * 0.40]); // y range 0.30-0.70
+    const t = (i + 0.5) / 5; // 0.1, 0.3, 0.5, 0.7, 0.9
+    oline.push([0, yMid - 0.04 + t * 0.08]); // y range 0.46-0.54 — tight 8% band
   }
   const qb: [number, number] = [-5, yMid];
   const wr: [number, number][] = [
-    [-2, 0.15],  // top slot WR
-    [-2, 0.85],  // bottom slot WR
+    [-3, 0.20],  // top wide receiver (behind LOS)
+    [-3, 0.80],  // bottom wide receiver
   ];
   return { qb, oline, wr, dline: [], cb: [] };
 }
 
 /** Build defensive lineup. Defense is AHEAD of LOS (positive x offsets).
- *  - D-Line: just ahead of LOS (1yd) to avoid overlapping O-Line pixels
+ *  - D-Line: 4 across the LOS in a tight horizontal row
  *  - CBs: 8 yds deep, wide */
 function buildDefense(): Lineup {
+  const yMid = 0.50;
   const dline: [number, number][] = [];
   for (let i = 0; i < 4; i++) {
     const t = (i + 0.5) / 4;
-    dline.push([1, 0.30 + t * 0.40]);
+    dline.push([0, yMid - 0.03 + t * 0.06]); // tight band y=0.47..0.53
   }
   const cb: [number, number][] = [
-    [8, 0.12],
-    [8, 0.88],
+    [8, 0.15],
+    [8, 0.85],
   ];
   return { qb: [0, 0], oline: [], wr: [], dline, cb };
 }
