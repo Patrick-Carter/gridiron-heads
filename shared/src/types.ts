@@ -1,4 +1,4 @@
-// Gridiron Heads — shared game types
+// Browser Bowl — shared game types
 // Both server (authoritative resolver) and client (mirror + UI) import these.
 
 export type PlayParent = 'run' | 'pass' | 'punt' | 'fg';

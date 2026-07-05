@@ -20,7 +20,7 @@ import {
   playTurnover,
 } from '../audio/synth.js';
 import type { SessionSnapshot } from '../hooks/useSession.js';
-import { yardsFromOwnGoal, type Play } from '@gridiron/shared';
+import { ballSpot, type Play } from '@gridiron/shared';
 
 export default function Game({
   state,
@@ -179,9 +179,11 @@ export default function Game({
                 {game.down === 1 ? '1st' : game.down === 2 ? '2nd' : game.down === 3 ? '3rd' : '4th'}
               </span>{' '}
               &amp; {game.distance}
-              {game.distance >= 10 && game.ball_yardline >= 10 && game.ball_yardline <= 90
-                ? ` at own ${yardsFromOwnGoal(game)}`
-                : ''}
+              {(() => {
+                const spot = ballSpot(game);
+                if (spot.label === null) return ' at midfield';
+                return ` at ${spot.label.toLowerCase()} ${spot.yards}`;
+              })()}
             </span>
             <span className="text-xs font-bold">
               <span className={isOffense ? 'chip !bg-lime' : 'chip !bg-maroon !text-cream'}>

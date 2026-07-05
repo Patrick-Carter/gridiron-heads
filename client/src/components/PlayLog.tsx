@@ -1,12 +1,14 @@
 import type { PlayResult } from '@gridiron/shared';
-
-function yardsFromOwnForPlay(p: PlayResult): number {
-  const dir = p.offense_direction;
-  return dir === 1 ? p.yardline_before : 100 - p.yardline_before;
-}
+import { ballSpotAt } from '@gridiron/shared';
 
 function downLabel(d: number): string {
   return d === 1 ? '1st' : d === 2 ? '2nd' : d === 3 ? '3rd' : '4th';
+}
+
+function spotForPlay(p: PlayResult): string {
+  const spot = ballSpotAt(p.yardline_before, p.offense_direction);
+  if (spot.label === null) return 'at 50';
+  return `${spot.label.toLowerCase()} ${spot.yards}`;
 }
 
 export default function PlayLog({
@@ -53,7 +55,7 @@ export default function PlayLog({
                     {isLast ? '▶ LAST PLAY' : `Play #${playNum}`}
                   </span>
                   <span className="text-[10px]">
-                    {downLabel(p.down)} & {p.distance} · own {yardsFromOwnForPlay(p)}
+                    {downLabel(p.down)} & {p.distance} · {spotForPlay(p)}
                   </span>
                 </div>
 

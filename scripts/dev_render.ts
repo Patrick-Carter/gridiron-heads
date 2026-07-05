@@ -263,8 +263,16 @@ function drawStatusBar(ctx: any, down: number, distance: number, ballYardline: n
   drawText(ctx, downStr, 8, textY, COLORS.yellow);
   const dnW = textWidth(downStr);
   drawText(ctx, '& ' + distance, 8 + dnW + 6, textY, COLORS.cream);
-  const ownYard = direction === 1 ? ballYardline : 100 - ballYardline;
-  const spot = `AT OWN ${ownYard}`;
+  const displayYard = Math.min(ballYardline, 100 - ballYardline);
+  let spot: string;
+  if (ballYardline === 50) {
+    spot = 'AT 50';
+  } else {
+    const nearIsOppEnd =
+      (direction === 1 && ballYardline > 50) ||
+      (direction === -1 && ballYardline < 50);
+    spot = `AT ${nearIsOppEnd ? 'OPP' : 'OWN'} ${displayYard}`;
+  }
   const spotW = textWidth(spot);
   drawText(ctx, spot, (FIELD_W - spotW) / 2, textY, COLORS.cream);
   const arrow = direction === 1 ? 'ATTACK >>>' : '<<< ATTACK';

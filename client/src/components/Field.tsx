@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 // =============================================================================
-// GRIDIRON HEADS — Field renderer
+// BROWSER BOWL — Field renderer
 //
 // Retro Bowl-style top-down pixel-art field. The canvas is intentionally
 // rendered at a LOW internal resolution (480x270) and upscaled by CSS with
@@ -455,9 +455,19 @@ function drawStatusBar(
   const dnW = textWidth(downStr, scale);
   drawText(ctx, '& ' + distance, 8 + dnW + 6, textY, COLORS.cream, scale);
 
-  // Ball spot (center): "AT OWN XX" — direction-aware
-  const ownYard = direction === 1 ? ballYardline : 100 - ballYardline;
-  const spot = `AT OWN ${ownYard}`;
+  // Ball spot (center): "AT OWN XX" / "AT OPP XX" / "AT 50" — NFL convention.
+  // Number is distance to the NEAR end zone; OWN/OPP tells you which side the
+  // near end zone belongs to from the offense's perspective.
+  const displayYard = Math.min(ballYardline, 100 - ballYardline);
+  let spot: string;
+  if (ballYardline === 50) {
+    spot = 'AT 50';
+  } else {
+    const nearIsOppEnd =
+      (direction === 1 && ballYardline > 50) ||
+      (direction === -1 && ballYardline < 50);
+    spot = `AT ${nearIsOppEnd ? 'OPP' : 'OWN'} ${displayYard}`;
+  }
   const spotW = textWidth(spot, scale);
   drawText(ctx, spot, (FIELD_W - spotW) / 2, textY, COLORS.cream, scale);
 
@@ -532,24 +542,18 @@ function drawFieldBase(
   }
 
   // Yard numbers — paint at every 10 yard line, both top and bottom of field
+  // Real football convention: numbers show the distance to the NEAREST end
+  // zone, so 10..50 mirror across midfield (yardline 60 reads "40", etc.).
   for (let yd = 10; yd < 100; yd += 10) {
     // Skip the 50 — that's where the midfield logo lives
     if (yd === 50) continue;
     const x = Math.round((yd / 100) * FIELD_W);
-    // Numbers are oriented for each direction: when direction is +1 the
-    // bottom number reads normally and the top is mirrored. When direction is
-    // -1 it flips. We paint the same number twice — top and bottom — and the
-    // direction (the ball's progress) will draw the correct arrow.
-    const numStr = String(yd);
+    const displayYd = Math.min(yd, 100 - yd);
+    const numStr = String(displayYd);
     const topY = FIELD_TOP + 6;
     const botY = FIELD_BOTTOM - 11;
     drawText(ctx, numStr, x - textWidth(numStr) / 2, topY, COLORS.yardNumber);
     drawText(ctx, numStr, x - textWidth(numStr) / 2, botY, COLORS.yardNumber);
-    // For direction = -1, paint a mirrored copy on the other side so
-    // players attacking left still read the yard markers correctly.
-    if (direction === -1) {
-      drawText(ctx, numStr, x - textWidth(numStr) / 2, topY + 6, COLORS.yardNumber);
-    }
   }
 
   // Midfield logo (a small football icon at the 50)

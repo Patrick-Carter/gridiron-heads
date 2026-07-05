@@ -37,6 +37,31 @@ export function yardsFromOwnGoal(state: GameState): number {
   return dir === 1 ? state.ball_yardline : 100 - state.ball_yardline;
 }
 
+export interface BallSpot {
+  /** 'OWN' = ball in offense's own half, 'OPP' = in opponent's half, null = exactly midfield (50). */
+  label: 'OWN' | 'OPP' | null;
+  /** Distance from the NEAR end zone (0..50). */
+  yards: number;
+}
+
+/** Ball spot in NFL broadcast notation: distance to the near end zone, with
+ *  OWN/OPP indicating which side the near end zone belongs to from the
+ *  offense's POV. Used by the canvas status bar, possession HUD, and the
+ *  recent-plays list. dir=+1 attacks yardline 100; dir=-1 attacks yardline 0. */
+export function ballSpot(state: GameState): BallSpot {
+  return ballSpotAt(state.ball_yardline, offenseDirection(state));
+}
+
+/** Same as `ballSpot` but takes raw values so callers with a `PlayResult`
+ *  (which has `yardline_before` + `offense_direction`) can reuse the logic. */
+export function ballSpotAt(ballYardline: number, dir: 1 | -1): BallSpot {
+  if (ballYardline === 50) return { label: null, yards: 50 };
+  const yards = Math.min(ballYardline, 100 - ballYardline);
+  const nearIsOppEnd =
+    (dir === 1 && ballYardline > 50) || (dir === -1 && ballYardline < 50);
+  return { label: nearIsOppEnd ? 'OPP' : 'OWN', yards };
+}
+
 export function newGameState(
   session_id: string,
   teams: [TeamState, TeamState],

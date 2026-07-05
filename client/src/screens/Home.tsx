@@ -4,7 +4,7 @@ import FlashHeader from '../components/FlashHeader.js';
 export default function Home() {
   return (
     <div className="min-h-full flex flex-col items-center justify-center p-4 md:p-8 relative">
-      <FlashHeader title="GRIDIRON HEADS!" kicker="Beta v1" star="⭐" />
+      <FlashHeader title="BROWSER BOWL!" kicker="Beta v1" star="⭐" />
 
       <div className="panel-flash max-w-md w-full mt-2 space-y-4">
         <div className="panel-titlebar">
@@ -54,7 +54,7 @@ export default function Home() {
       </div>
 
       <footer className="mt-8 text-xs text-cream/70 text-center">
-        Gridiron Heads · an over-9000-Clifford football simulator
+        Browser Bowl · an over-9000-Clifford football simulator
       </footer>
     </div>
   );

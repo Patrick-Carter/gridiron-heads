@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { newGameState, advanceAfterPlay, offenseDirection, yardsToEndzone, flipPossession, kickoffYardline, yardsFromOwnGoal } from '../src/game_state.js';
+import { newGameState, advanceAfterPlay, offenseDirection, yardsToEndzone, flipPossession, kickoffYardline, yardsFromOwnGoal, ballSpot, ballSpotAt } from '../src/game_state.js';
 import type { GameState, TeamState } from '../src/types.js';
 
 function emptyTeams(): [TeamState, TeamState] {
@@ -280,5 +280,65 @@ describe('yardsFromOwnGoal', () => {
       possession_idx: 1,
     };
     expect(yardsFromOwnGoal(g)).toBe(1);
+  });
+});
+
+describe('ballSpot', () => {
+  it('midfield (absolute 50) is neutral', () => {
+    const g: GameState = { ...newGameState('s', emptyTeams()), ball_yardline: 50 };
+    expect(ballSpot(g)).toEqual({ label: null, yards: 50 });
+  });
+  it('team 0 at absolute 75 → OPP 25 (in opponent territory)', () => {
+    const g: GameState = { ...newGameState('s', emptyTeams()), ball_yardline: 75 };
+    expect(ballSpot(g)).toEqual({ label: 'OPP', yards: 25 });
+  });
+  it('team 0 at absolute 20 → OWN 20 (own territory)', () => {
+    const g: GameState = { ...newGameState('s', emptyTeams()), ball_yardline: 20 };
+    expect(ballSpot(g)).toEqual({ label: 'OWN', yards: 20 });
+  });
+  it('team 1 at absolute 25 → OPP 25 (team 1 attacks left, left end zone is OPP)', () => {
+    const g: GameState = {
+      ...newGameState('s', emptyTeams()),
+      ball_yardline: 25,
+      possession_idx: 1,
+    };
+    expect(ballSpot(g)).toEqual({ label: 'OPP', yards: 25 });
+  });
+  it('team 1 at absolute 75 → OWN 25 (own territory)', () => {
+    const g: GameState = {
+      ...newGameState('s', emptyTeams()),
+      ball_yardline: 75,
+      possession_idx: 1,
+    };
+    expect(ballSpot(g)).toEqual({ label: 'OWN', yards: 25 });
+  });
+  it('team 1 at absolute 90 → OWN 10 (team 1 defends the right end zone)', () => {
+    const g: GameState = {
+      ...newGameState('s', emptyTeams()),
+      ball_yardline: 90,
+      possession_idx: 1,
+    };
+    expect(ballSpot(g)).toEqual({ label: 'OWN', yards: 10 });
+  });
+  it('team 1 at absolute 10 → OPP 10 (close to opponent end zone team 1 is attacking)', () => {
+    const g: GameState = {
+      ...newGameState('s', emptyTeams()),
+      ball_yardline: 10,
+      possession_idx: 1,
+    };
+    expect(ballSpot(g)).toEqual({ label: 'OPP', yards: 10 });
+  });
+
+  describe('ballSpotAt (raw values, for PlayResult callers)', () => {
+    it('mirrored at the 50: same absolute yard → OPP for one team, OWN for the other', () => {
+      expect(ballSpotAt(30, 1)).toEqual({ label: 'OWN', yards: 30 });
+      expect(ballSpotAt(70, 1)).toEqual({ label: 'OPP', yards: 30 });
+      expect(ballSpotAt(30, -1)).toEqual({ label: 'OPP', yards: 30 });
+      expect(ballSpotAt(70, -1)).toEqual({ label: 'OWN', yards: 30 });
+    });
+    it('exact 50 is neutral regardless of direction', () => {
+      expect(ballSpotAt(50, 1)).toEqual({ label: null, yards: 50 });
+      expect(ballSpotAt(50, -1)).toEqual({ label: null, yards: 50 });
+    });
   });
 });
