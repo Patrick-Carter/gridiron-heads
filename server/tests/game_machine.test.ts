@@ -241,6 +241,31 @@ describe('Play resolution', () => {
     expect(gained / total).toBeGreaterThan(0.80);
   });
 
+  it('yards capped at remaining distance to end zone (no impossible gains)', () => {
+    // Ball at 75 — only 25 yards to goal. Any gain > 25 should be clamped.
+    const r = setupReadyToSnapRoom();
+    r.game!.ball_yardline = 75;
+    r.game!.teams[0].off_skill = { id: 'OFF', group: 'OFF_SKILL', skill: 100, name: 'A' };
+    r.game!.teams[1].def_skill = { id: 'DEF', group: 'DEF_SKILL', skill: 1, name: 'B' };
+    r.pending_schemes[r.players[0].id] = { parent: 'run', sub: 'inside' };
+    r.pending_schemes[r.players[1].id] = { parent: 'pass', sub: 'deep' };
+    // Search until we get a positive yards play
+    for (let s = 1; s < 50; s++) {
+      const test = setupReadyToSnapRoom();
+      test.game!.ball_yardline = 75;
+      test.game!.teams[0].off_skill = { id: 'OFF', group: 'OFF_SKILL', skill: 100, name: 'A' };
+      test.game!.teams[1].def_skill = { id: 'DEF', group: 'DEF_SKILL', skill: 1, name: 'B' };
+      test.pending_schemes[test.players[0].id] = { parent: 'run', sub: 'inside' };
+      test.pending_schemes[test.players[1].id] = { parent: 'pass', sub: 'deep' };
+      const { result } = resolveCurrentPlay(test, s);
+      if (result.yards > 0) {
+        // Clamped to ≤ 25 (distance from 75 to 100)
+        expect(result.yards).toBeLessThanOrEqual(25);
+        return;
+      }
+    }
+  });
+
   it('yards move the ball forward on offense', () => {
     const startYardline = 25;
     let yardMoved = false;
@@ -310,9 +335,8 @@ describe('Play resolution', () => {
       const { result, scoring_event } = resolveCurrentPlay(r, s);
       if (scoring_event === 'fg') {
         expect(r.game!.scores[offIdx]).toBe(0.5);
-        // New offense starts at THEIR own 25 (yardline 25 if idx 0, 75 if idx 1)
-        const newIdx = offIdx === 0 ? 1 : 0;
-        expect(r.game!.ball_yardline).toBe(newIdx === 0 ? 25 : 75);
+        // After FG, opposing team takes ball at their own 25 (yardline 25).
+        expect(r.game!.ball_yardline).toBe(25);
         succeeded = true;
         break;
       }

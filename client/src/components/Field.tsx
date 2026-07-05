@@ -4,7 +4,6 @@ import { mulberry32 } from '@gridiron/shared';
 interface FieldProps {
   playResult: any | null;
   ballYardline: number;
-  possessionIdx: 0 | 1;
   isAnimating: boolean;
   onAnimationDone?: () => void;
 }
@@ -81,12 +80,13 @@ function toCanvas(
 export default function Field({
   playResult,
   ballYardline,
-  possessionIdx,
   isAnimating,
   onAnimationDone,
 }: FieldProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
+  // Field is always rendered going right; direction is always +1.
+  const DIRECTION: 1 | -1 = 1;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -102,16 +102,12 @@ export default function Field({
       }
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
-    // Direction of attack for the current offense:
-    // possession_idx === 0 → offense attacks right (yardline 0→100)
-    // possession_idx === 1 → offense attacks left (yardline 100→0)
-    const direction: 1 | -1 = possessionIdx === 0 ? 1 : -1;
-    drawField(ctx, canvas, ballYardline, direction);
+    drawField(ctx, canvas, ballYardline, DIRECTION);
     const off = buildOffense();
     const def = buildDefense();
-    drawPlayerSet(ctx, off, ballYardline, direction, '#e6edf3');
-    drawPlayerSet(ctx, def, ballYardline, direction, '#f85149');
-  }, [ballYardline, possessionIdx, playResult]);
+    drawPlayerSet(ctx, off, ballYardline, DIRECTION, '#e6edf3');
+    drawPlayerSet(ctx, def, ballYardline, DIRECTION, '#f85149');
+  }, [ballYardline, playResult]);
 
   useEffect(() => {
     if (!playResult || !isAnimating) return;
@@ -123,12 +119,7 @@ export default function Field({
     const seed = playResult.seed ?? 1;
     const start = performance.now();
     const duration = 1800;
-    // Direction comes from the play's offense_direction (captured at snap time on server)
-    const direction: 1 | -1 = (playResult.offense_direction ?? 1) as 1 | -1;
-    // During animation, draw the field at the play's starting LOS (yardline_before),
-    // NOT the current ballYardline (which may have already advanced to yardline_after
-    // if this was a TD/turnover). After the animation finishes, the static useEffect
-    // redraws at the NEW ballYardline for the static between-plays view.
+    const direction: 1 | -1 = 1;
     const animLosYardline = playResult.yardline_before ?? ballYardline;
 
     const animate = (t: number) => {
@@ -143,19 +134,18 @@ export default function Field({
         onAnimationDone?.();
         // Force an immediate redraw at the new (post-play) ballYardline so the
         // static lineups appear at the correct spot without waiting for a re-render.
-        const newDirection: 1 | -1 = possessionIdx === 0 ? 1 : -1;
-        drawField(ctx, canvas, ballYardline, newDirection);
+        drawField(ctx, canvas, ballYardline, DIRECTION);
         const off = buildOffense();
         const def = buildDefense();
-        drawPlayerSet(ctx, off, ballYardline, newDirection, '#e6edf3');
-        drawPlayerSet(ctx, def, ballYardline, newDirection, '#f85149');
+        drawPlayerSet(ctx, off, ballYardline, DIRECTION, '#e6edf3');
+        drawPlayerSet(ctx, def, ballYardline, DIRECTION, '#f85149');
       }
     };
     animationRef.current = requestAnimationFrame(animate);
     return () => {
       if (animationRef.current != null) cancelAnimationFrame(animationRef.current);
     };
-  }, [playResult, isAnimating, ballYardline, possessionIdx]);
+  }, [playResult, isAnimating, ballYardline]);
 
   return (
     <canvas

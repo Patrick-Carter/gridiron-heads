@@ -59,7 +59,6 @@ export default function Game({
           <Field
             playResult={lastPlayResult}
             ballYardline={game.ball_yardline}
-            possessionIdx={game.possession_idx}
             isAnimating={isAnimating}
             onAnimationDone={handleAnimationDone}
           />

@@ -9,12 +9,16 @@ export interface ResolveInput {
   def_skill: number;
   off_play: Play;
   def_play: Play;
-  off_audible?: Play | null;
-  def_audible?: Play | null;
+  off_audible?: Play | null;       // if used
+  def_audible?: Play | null;       // if used (only allowed after off audible/fake)
   off_fake_audible?: boolean;
-  qb_off_modifiers?: QBModifier[];
-  qb_def_modifiers?: QBModifier[];
+  qb_off_modifiers?: QBModifier[];  // applied to off_skill roll
+  qb_def_modifiers?: QBModifier[];  // applied to def_skill roll
   seed: number;
+  /** Ball yardline before the play (0..100). Used to cap yards at the remaining
+   *  distance to the goal line so a +20 gain from the 75 doesn't leave the ball
+   *  at 95 with the recap reading "Gain of 20" when only 25 yards were possible. */
+  yardline_before?: number;
 }
 
 export interface ResolveOutput {
@@ -138,6 +142,17 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
       yards = -(1 + Math.floor(rng() * (parent_match ? 4 : 2)));
     }
     yards = applyYardsPct(yards, input.qb_off_modifiers, parent);
+    // Cap yards at the remaining distance to the goal line so a play can't
+    // produce an impossible gain (e.g., +20 from the 75-yard line). The excess
+    // should have been a TD; we trim down to a 1st & goal at the 1.
+    if (yards > 0 && typeof input.yardline_before === 'number') {
+      const maxGain = 100 - input.yardline_before;
+      if (yards > maxGain) yards = Math.max(1, maxGain);
+    } else if (yards < 0 && typeof input.yardline_before === 'number') {
+      // Cap losses at the distance to your own goal line (yardline 0)
+      const maxLoss = input.yardline_before;
+      if (-yards > maxLoss) yards = -Math.max(1, maxLoss);
+    }
   }
 
   return {

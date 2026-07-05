@@ -209,9 +209,9 @@ export function startGame(room: RoomState): GameState {
     room.first_possession_id === host_id ? 0 : 1;
   const game = newGameState(room.session_id, teams);
   game.possession_idx = possession_idx;
-  // First-possession team starts at their own 25: idx 0 (attacks right) → yardline 25;
-  // idx 1 (attacks left) → yardline 75.
-  game.ball_yardline = possession_idx === 0 ? 25 : 75;
+  // Always: ball at yardline 25, offense attacks right. Team identity only flips
+  // possession_idx; the visual field is identical for both teams.
+  game.ball_yardline = 25;
   room.game = game;
   return game;
 }
@@ -305,7 +305,7 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       yards: 0,
       scoring_event: fg.make ? 'fg' : null,
       seed,
-      offense_direction: (game.possession_idx === 0 ? 1 : -1) as 1 | -1,
+      offense_direction: 1 as 1 | -1,
       text_recap: fg.make
         ? `FIELD GOAL IS GOOD! (${fg.total} > ${yards_to_endzone})`
         : `FG missed (${fg.total} ≤ ${yards_to_endzone})`,
@@ -313,8 +313,8 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     if (fg.make) {
       game.scores = addPoints(game.scores, game.possession_idx, 0.5);
       game.possession_idx = game.possession_idx === 0 ? 1 : 0;
-      // New offense at their own 25: idx 0 attacks right (yardline 25), idx 1 left (75)
-      game.ball_yardline = game.possession_idx === 0 ? 25 : 75;
+      // Opposing team at their own 25; field always renders going right.
+      game.ball_yardline = 25;
       game.down = 1;
       game.distance = 10;
     } else {
@@ -362,7 +362,7 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       yards: punt_yards,
       scoring_event: null,
       seed,
-      offense_direction: (game.possession_idx === 0 ? 1 : -1) as 1 | -1,
+      offense_direction: 1 as 1 | -1,
       text_recap: turnover
         ? `PUNT BLOCKED! Defense takes over.`
         : `Punt of ${punt_yards} yards.`,
@@ -393,8 +393,8 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   // Run/Pass: standard resolvePlay
   const offSkill = offense.off_skill?.skill ?? 60;
   const defSkill = defense.def_skill?.skill ?? 60;
-  // Capture direction of attack for the offense BEFORE mutating state
-  const offense_direction: 1 | -1 = (game.possession_idx === 0 ? 1 : -1) as 1 | -1;
+  // Field is always rendered going right; direction is always +1.
+  const offense_direction: 1 | -1 = 1;
   const resolve = resolvePlay({
     off_skill: offSkill,
     def_skill: defSkill,
@@ -406,6 +406,7 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     qb_off_modifiers: qb_off_mods,
     qb_def_modifiers: qb_def_mods,
     seed,
+    yardline_before: game.ball_yardline,
   });
   const yardline_before = game.ball_yardline;
   const adv = advanceAfterPlay(game, resolve.yards);
@@ -421,41 +422,40 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   let change_of_possession = false;
 
   if (adv.touchdown) {
-      // TD → +1 to offense, opponent takes ball at their own 25 (going the opposite
-      // direction). new_offense_idx === 0 attacks right → starts at yardline 25.
-      // new_offense_idx === 1 attacks left → starts at yardline 75.
+      // TD → +1 to offense. Opposing team takes ball at THEIR own 25 (yardline 25).
+      // Field is always rendered going right; no mirroring needed.
       game.scores = addPoints(game.scores, game.possession_idx, 1);
       scoring_event = 'td';
       next_possession = game.possession_idx === 0 ? 1 : 0;
-      next_yardline = next_possession === 0 ? 25 : 75;
+      next_yardline = 25;
       next_down = 1;
       next_distance = 10;
       change_of_possession = true;
     } else if (adv.safety) {
-      // Safety → +0.5 to defense (the tackling team), opponent takes at their own 25
+      // Safety → +0.5 to defense. Opposing team takes ball at THEIR own 25.
       game.scores = addPoints(game.scores, game.possession_idx === 0 ? 1 : 0, 0.5);
       scoring_event = 'safety';
       next_possession = game.possession_idx === 0 ? 1 : 0;
-      next_yardline = next_possession === 0 ? 25 : 75;
+      next_yardline = 25;
       next_down = 1;
       next_distance = 10;
       change_of_possession = true;
     } else if (resolve.turnover) {
-    // Defensive read was correct → possession flips, ball at play's end spot
-    next_possession = game.possession_idx === 0 ? 1 : 0;
-    next_down = 1;
-    next_distance = 10;
-    change_of_possession = true;
-  } else if (game.down === 4 && resolve.yards < game.distance) {
-    // Turnover on downs: failed to convert on 4th
-    next_possession = game.possession_idx === 0 ? 1 : 0;
-    next_down = 1;
-    next_distance = 10;
-    change_of_possession = true;
-  } else {
-    // Normal play: keep offense, apply advanceAfterPlay's down/distance/yardline
-    // (next_down/next_distance/next_yardline already set above)
-  }
+      // Defensive read was correct → possession flips, ball at play's end spot
+      next_possession = game.possession_idx === 0 ? 1 : 0;
+      next_down = 1;
+      next_distance = 10;
+      change_of_possession = true;
+    } else if (game.down === 4 && resolve.yards < game.distance) {
+      // Turnover on downs: failed to convert on 4th
+      next_possession = game.possession_idx === 0 ? 1 : 0;
+      next_down = 1;
+      next_distance = 10;
+      change_of_possession = true;
+    } else {
+      // Normal play: keep offense, apply advanceAfterPlay's down/distance/yardline
+      // (next_down/next_distance/next_yardline already set above)
+    }
 
   game.ball_yardline = next_yardline;
   game.down = next_down;
