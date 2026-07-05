@@ -1496,7 +1496,10 @@ export default function Field({
   }, [scrubProgress, playResult]);
 
   return (
-    <div className="w-full" style={{ aspectRatio: `${FIELD_W} / ${FIELD_H}` }}>
+    <div
+      className="w-full md:!w-auto md:!max-h-[clamp(280px,42vh,480px)] mx-auto"
+      style={{ aspectRatio: `${FIELD_W} / ${FIELD_H}` }}
+    >
       <canvas
         ref={canvasRef}
         width={FIELD_W}

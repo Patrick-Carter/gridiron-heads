@@ -217,3 +217,16 @@ body::before {
   background: #0a3d1f;
   overflow: hidden;
 }
+
+/* On desktop (md+), the inner canvas wrapper is capped at
+   `clamp(280px, 42vh, 480px)` so the field stops dwarfing the play call
+   panels below. When the canvas is shorter than the field-frame, center it
+   horizontally so the dark-green bg fills the side margins (chunky retro
+   TV-frame look). Mobile keeps width-bound `w-full` for max horizontal use. */
+@media (min-width: 768px) {
+  .field-frame {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
