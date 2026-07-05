@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { newGameState, advanceAfterPlay, offenseDirection, yardsToEndzone, flipPossession } from '../src/game_state.js';
+import { newGameState, advanceAfterPlay, offenseDirection, yardsToEndzone, flipPossession, kickoffYardline, yardsFromOwnGoal } from '../src/game_state.js';
 import type { GameState, TeamState } from '../src/types.js';
 
 function emptyTeams(): [TeamState, TeamState] {
@@ -232,5 +232,53 @@ describe('advanceAfterPlay', () => {
       expect(flipped.distance).toBe(10);
       expect(flipped.ball_yardline).toBe(37); // same absolute spot — new offense attacks opposite end zone
     });
+  });
+});
+
+describe('kickoffYardline', () => {
+  it('dir=+1 → absolute 25 (team 0 attacks right, own GL is at 0)', () => {
+    expect(kickoffYardline(1)).toBe(25);
+  });
+  it('dir=-1 → absolute 75 (team 1 attacks left, own GL is at 100)', () => {
+    expect(kickoffYardline(-1)).toBe(75);
+  });
+});
+
+describe('yardsFromOwnGoal', () => {
+  it('team 0 at absolute 20 → 20 yards from own goal', () => {
+    const g: GameState = { ...newGameState('s', emptyTeams()), ball_yardline: 20 };
+    expect(yardsFromOwnGoal(g)).toBe(20);
+  });
+  it('team 0 at absolute 75 → 75 yards from own goal', () => {
+    const g: GameState = { ...newGameState('s', emptyTeams()), ball_yardline: 75 };
+    expect(yardsFromOwnGoal(g)).toBe(75);
+  });
+  it('team 1 at absolute 20 → 80 yards from own goal (own GL at 100)', () => {
+    const g: GameState = {
+      ...newGameState('s', emptyTeams()),
+      ball_yardline: 20,
+      possession_idx: 1,
+    };
+    expect(yardsFromOwnGoal(g)).toBe(80);
+  });
+  it('team 1 at absolute 75 → 25 yards from own goal', () => {
+    const g: GameState = {
+      ...newGameState('s', emptyTeams()),
+      ball_yardline: 75,
+      possession_idx: 1,
+    };
+    expect(yardsFromOwnGoal(g)).toBe(25);
+  });
+  it('team 0 at own 1 (absolute 1)', () => {
+    const g: GameState = { ...newGameState('s', emptyTeams()), ball_yardline: 1 };
+    expect(yardsFromOwnGoal(g)).toBe(1);
+  });
+  it('team 1 at own 1 (absolute 99)', () => {
+    const g: GameState = {
+      ...newGameState('s', emptyTeams()),
+      ball_yardline: 99,
+      possession_idx: 1,
+    };
+    expect(yardsFromOwnGoal(g)).toBe(1);
   });
 });

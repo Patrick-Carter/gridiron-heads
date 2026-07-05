@@ -14,6 +14,7 @@ import {
   emptyTeam,
 } from '../src/socket/game_machine.js';
 import type { RoomState } from '../src/socket/game_machine.js';
+import { kickoffYardline, offenseDirection } from '@gridiron/shared';
 
 function mkRoom(): RoomState {
   return newRoom('s1', 'host1', 'Alice');
@@ -420,8 +421,9 @@ describe('Play resolution', () => {
       const { result, scoring_event } = resolveCurrentPlay(r, s);
       if (scoring_event === 'fg') {
         expect(r.game!.scores[offIdx]).toBe(0.5);
-        // After FG, opposing team takes ball at their own 25 (yardline 25).
-        expect(r.game!.ball_yardline).toBe(25);
+        // After FG, opposing team takes ball at their own 25 — dir-aware
+        // absolute spot (kickoffYardline of the NEW offense's direction).
+        expect(r.game!.ball_yardline).toBe(kickoffYardline(offenseDirection(r.game!)));
         succeeded = true;
         break;
       }
@@ -457,6 +459,39 @@ describe('Play resolution', () => {
       if (scoring_event === 'td') {
         expect(r.game!.scores[offIdx]).toBe(1);
         expect(result.scoring_event).toBe('td');
+        found = true;
+        break;
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it('TD as team 0 → new offense (team 1) starts at absolute 75 (own 25) — dir-aware kickoff', () => {
+    // Mirror of the TD test above, but assert the kickoff yardline is
+    // dir-aware: team 0 attacking right, TD scores, team 1 takes over at
+    // absolute 75 (their own 25, since their goal line is at 100).
+    let found = false;
+    for (let s = 1; s < 200 && !found; s++) {
+      const r = setupReadyToSnapRoom();
+      // Force team 0 to be on offense with a high skill differential
+      r.game!.ball_yardline = 99;
+      r.game!.teams[0].off_skill = { id: 'OFF0', group: 'OFF_SKILL', skill: 100, name: 'A' };
+      r.game!.teams[0].def_skill = { id: 'DEFD0', group: 'DEF_SKILL', skill: 1, name: 'A' };
+      r.game!.teams[1].off_skill = { id: 'OFF1', group: 'OFF_SKILL', skill: 1, name: 'B' };
+      r.game!.teams[1].def_skill = { id: 'DEFD1', group: 'DEF_SKILL', skill: 100, name: 'B' };
+      const offIdx = r.game!.possession_idx;
+      // We need possession_idx === 0 here so that team 0 is on offense.
+      if (offIdx !== 0) continue;
+      const defIdx = 1;
+      r.pending_schemes[r.players[offIdx].id] = { parent: 'run', sub: 'inside' };
+      r.pending_schemes[r.players[defIdx].id] = { parent: 'pass', sub: 'deep' };
+      const { scoring_event } = resolveCurrentPlay(r, s);
+      if (scoring_event === 'td') {
+        // Team 1 (dir=-1) takes over at their own 25 → absolute 75.
+        expect(r.game!.possession_idx).toBe(1);
+        expect(r.game!.ball_yardline).toBe(kickoffYardline(-1));
+        expect(r.game!.down).toBe(1);
+        expect(r.game!.distance).toBe(10);
         found = true;
         break;
       }

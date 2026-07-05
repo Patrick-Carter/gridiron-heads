@@ -7,7 +7,7 @@ import ScorePanel from '../components/ScorePanel.js';
 import PlayLog from '../components/PlayLog.js';
 import RosterModal from '../components/RosterModal.js';
 import type { SessionSnapshot } from '../hooks/useSession.js';
-import type { Play } from '@gridiron/shared';
+import { yardsFromOwnGoal, type Play } from '@gridiron/shared';
 
 export default function Game({
   state,
@@ -105,7 +105,7 @@ export default function Game({
               </span>{' '}
               &amp; {game.distance}
               {game.distance >= 10 && game.ball_yardline >= 10 && game.ball_yardline <= 90
-                ? ` at the ${game.ball_yardline}`
+                ? ` at own ${yardsFromOwnGoal(game)}`
                 : ''}
             </span>
             <span className="text-xs font-bold">

@@ -22,6 +22,21 @@ export function yardsToEndzone(state: GameState): number {
   return offenseDirection(state) === 1 ? 100 - state.ball_yardline : state.ball_yardline;
 }
 
+/** Absolute yardline where the new offense takes over after a score / change of possession.
+ *  dir=+1 → attacks right → own goal line at 0  → start at absolute 25.
+ *  dir=-1 → attacks left  → own goal line at 100 → start at absolute 75. */
+export function kickoffYardline(dir: 1 | -1): number {
+  return dir === 1 ? 25 : 75;
+}
+
+/** Yards from the offense's OWN goal line (1..99).
+ *  dir=+1: own_yard = ball_yardline (since own GL is at 0).
+ *  dir=-1: own_yard = 100 - ball_yardline. */
+export function yardsFromOwnGoal(state: GameState): number {
+  const dir = offenseDirection(state);
+  return dir === 1 ? state.ball_yardline : 100 - state.ball_yardline;
+}
+
 export function newGameState(
   session_id: string,
   teams: [TeamState, TeamState],

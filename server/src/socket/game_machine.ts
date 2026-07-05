@@ -15,6 +15,7 @@ import {
   flipPossession,
   offenseDirection,
   yardsToEndzone,
+  kickoffYardline,
 } from '@gridiron/shared';
 import type {
   GameState,
@@ -221,9 +222,9 @@ export function startGame(room: RoomState): GameState {
     room.first_possession_id === host_id ? 0 : 1;
   const game = newGameState(room.session_id, teams);
   game.possession_idx = possession_idx;
-  // Always: ball at yardline 25, offense attacks right. Team identity only flips
-  // possession_idx; the visual field is identical for both teams.
-  game.ball_yardline = 25;
+  // New offense starts at their own 25 — dir-aware absolute spot.
+  // dir=+1 (team 0) → absolute 25; dir=-1 (team 1) → absolute 75.
+  game.ball_yardline = kickoffYardline(offenseDirection(game));
   room.game = game;
   return game;
 }
@@ -325,10 +326,10 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     };
     if (fg.make) {
       game.scores = addPoints(game.scores, game.possession_idx, 0.5);
-      // New offense takes ball at absolute yardline 25; they attack the
-      // OPPOSITE end zone — flipPossession handles that and resets to 1st & 10.
-      game.ball_yardline = 25;
+      // Flip first so offenseDirection(game) reflects the NEW offense, then
+      // place the ball at their own 25 (dir-aware absolute spot).
       Object.assign(game, flipPossession(game));
+      game.ball_yardline = kickoffYardline(offenseDirection(game));
     } else {
       // Miss → opposing team at the LOS (same absolute spot), fresh 1st & 10.
       game.ball_yardline = game.ball_yardline;
@@ -432,23 +433,24 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   let change_of_possession = false;
 
   if (adv.touchdown) {
-      // TD → +1 to offense. New offense takes ball at absolute yardline 25
-      // (touchback-style for both teams) and attacks the OPPOSITE end zone.
+      // TD → +1 to offense. New offense takes ball at their own 25
+      // (touchback-style; dir-aware absolute spot: 25 if they attack right,
+      // 75 if they attack left) and attacks the OPPOSITE end zone.
       game.scores = addPoints(game.scores, game.possession_idx, 1);
       scoring_event = 'td';
-      next_yardline = 25;
       next_possession = game.possession_idx === 0 ? 1 : 0;
+      next_yardline = kickoffYardline(next_possession === 0 ? 1 : -1);
       next_down = 1;
       next_distance = 10;
       change_of_possession = true;
     } else if (adv.safety) {
-      // Safety → +0.5 to defense. Defense gets ball at absolute yardline 25
-      // (free kick style — same start spot for both teams) and attacks the
-      // OPPOSITE end zone.
+      // Safety → +0.5 to defense. Defense gets ball at their own 25
+      // (free kick style; dir-aware absolute spot) and attacks the OPPOSITE
+      // end zone.
       game.scores = addPoints(game.scores, game.possession_idx === 0 ? 1 : 0, 0.5);
       scoring_event = 'safety';
       next_possession = game.possession_idx === 0 ? 1 : 0;
-      next_yardline = 25;
+      next_yardline = kickoffYardline(next_possession === 0 ? 1 : -1);
       next_down = 1;
       next_distance = 10;
       change_of_possession = true;

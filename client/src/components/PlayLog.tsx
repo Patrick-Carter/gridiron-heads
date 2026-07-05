@@ -1,3 +1,10 @@
+import type { PlayResult } from '@gridiron/shared';
+
+function yardsFromOwnForPlay(p: PlayResult): number {
+  const dir = p.offense_direction;
+  return dir === 1 ? p.yardline_before : 100 - p.yardline_before;
+}
+
 export default function PlayLog({
   history,
   myIdx,
@@ -27,7 +34,7 @@ export default function PlayLog({
                 style={{ borderWidth: 3, borderColor: '#0a0a18' }}
               >
                 <div className="text-[10px] text-ink/60 uppercase tracking-wide">
-                  {p.down === 1 ? '1st' : p.down === 2 ? '2nd' : p.down === 3 ? '3rd' : '4th'} & {p.distance} @ {p.yardline_before}
+                  {p.down === 1 ? '1st' : p.down === 2 ? '2nd' : p.down === 3 ? '3rd' : '4th'} & {p.distance} @ own {yardsFromOwnForPlay(p)}
                 </div>
                 <div className="font-bold">
                   <span className="chip">{p.off_call?.parent}</span>{' '}
