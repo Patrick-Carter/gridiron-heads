@@ -1,8 +1,11 @@
 // Web Audio synth — no asset deps, no frameworks.
 //
 // All game sound effects via oscillators + noise + filters. Routes through
-// the shared 4-bus mix (Master / Music / Crowd / SFX) defined in
-// `_audioBus.ts`. See that file for the volume API and persistence.
+// the shared 3-bus mix (Master / Crowd / SFX) defined in `_audioBus.ts`.
+// See that file for the volume API and persistence.
+//
+// Crowd swells (the "big play" roars) live in crowd.ts to keep them out of
+// this one-shot-focused module.
 //
 // Browsers require user interaction before AudioContext can play. Call
 // `initAudio()` from a click handler to "unlock" the context.
@@ -33,7 +36,7 @@ export function audioReady(): boolean {
   return isAudioReady();
 }
 
-// Back-compat alias used in older call sites (and MuteToggle path).
+// Back-compat alias used in older call sites.
 export { initAudio, setVolume, setVolumes, getVolumes, setMuted, isMuted };
 
 /** Envelope helper: ramp gain over time. */
@@ -126,33 +129,6 @@ export function playSnap(): void {
 export function playThud(intensity = 1): void {
   playTone(60, 120, 'sine', 0.3 * intensity, 2, 100);
   playNoise(120, 0.4 * intensity, 200, 0.7);
-}
-
-/** Crowd cheer for big plays. Layered noise + lowpass sweep. */
-export function playCheer(intensity = 1): void {
-  const c = _ensureRunning();
-  const bus = busFor('crowd');
-  if (!c || !bus) return;
-  const bufferSize = Math.max(1, Math.floor(c.sampleRate * (0.6 + 0.4 * intensity)));
-  const buf = c.createBuffer(1, bufferSize, c.sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < bufferSize; i++) {
-    const env = Math.sin((i / bufferSize) * Math.PI);
-    data[i] = (Math.random() * 2 - 1) * env;
-  }
-  const src = c.createBufferSource();
-  src.buffer = buf;
-  const filt = c.createBiquadFilter();
-  filt.type = 'lowpass';
-  filt.frequency.setValueAtTime(800, c.currentTime);
-  filt.frequency.linearRampToValueAtTime(2200, c.currentTime + 0.3 * intensity);
-  filt.Q.value = 2;
-  const g = c.createGain();
-  env(g, c.currentTime, 0.45 * Math.min(1.5, intensity), 0.05, 0.6, c.currentTime + bufferSize / c.sampleRate);
-  src.connect(filt);
-  filt.connect(g);
-  g.connect(bus);
-  src.start();
 }
 
 /** TD siren: classic sawtooth arpeggio rising in pitch. */
@@ -278,7 +254,6 @@ export function playPossessionChange(): void {
   g.connect(bus);
   osc.start(now);
   osc.stop(now + 0.42);
-  setTimeout(() => playCheer(0.5), 200);
 }
 
 /** Down / distance updated — quick muted tick. */

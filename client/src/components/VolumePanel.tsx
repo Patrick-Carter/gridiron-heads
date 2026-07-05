@@ -43,7 +43,7 @@ export default function VolumePanel({ className = '' }: { className?: string }) 
     setVolumesState((v) => ({ ...v, master: next }));
   }
 
-  function setChan(channel: 'music' | 'crowd' | 'sfx', value: number) {
+  function setChan(channel: 'crowd' | 'sfx', value: number) {
     // Touching a sub-channel also unlocks master (if it was muted)
     if (muted && value > 0) {
       setVolume('master', 0.7);
@@ -107,12 +107,6 @@ export default function VolumePanel({ className = '' }: { className?: string }) 
             </span>
           </div>
 
-          <SliderRow
-            label="🎵 Music"
-            value={volumes.music}
-            onChange={(v) => setChan('music', v)}
-            testId="vol-music"
-          />
           <SliderRow
             label="👥 Crowd"
             value={volumes.crowd}

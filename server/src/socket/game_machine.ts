@@ -489,6 +489,12 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   game.down = next_down;
   game.distance = next_distance;
   game.possession_idx = next_possession;
+  // New offense gets a fresh 1 real + 1 fake audible per drive. Reset only
+  // when possession actually flipped — same-team plays preserve the counter.
+  if (change_of_possession) {
+    game.audibles_used[next_possession] = 0;
+    game.fake_audibles_used[next_possession] = 0;
+  }
 
   const result: PlayResult = {
     down: game.down,

@@ -86,18 +86,24 @@ HTTP `POST /api/sessions` and `/api/sessions/:id/join` write to SQLite. When the
 
 ### 10. Audio architecture (Phase 8 — all generated via Web Audio API)
 - **Single AudioContext**, `initAudio()` once per page (call from any user click). All other modules call into the shared bus.
-- **4-channel mix bus** (`client/src/audio/_audioBus.ts`): Master / Music / Crowd / SFX. VolumePanel reads/writes these gains in [0,1]. Persists to localStorage `gridiron:audio_volumes`.
+- **3-channel mix bus** (`client/src/audio/_audioBus.ts`): Master / Crowd / SFX. VolumePanel reads/writes these gains in [0,1]. Persists to localStorage `gridiron:audio_volumes`.
 - **Modules**:
-  - `_audioBus.ts` — context init, 4 gains, volume API, localStorage persistence. Exposes `__test` for tests.
-  - `synth.ts` — 20+ one-shot SFX (snap, thud, cheer, TD siren, FG bell/miss, turnover, **UI click, UI hover, scheme select, audible, draft pick, coin flip, possession change, down change, kickoff, victory, defeat, point scored, incomplete pass whistle, error**).
-  - `music.ts` — procedural chiptune engine (lead + bass + kick/snare/hat) with **5 tracks** (`draft`, `game`, `tense`, `victory`, `defeat`). Step sequencer at 25ms cadence. Crossfades between tracks over 500ms.
-  - `crowd.ts` — continuous ambient murmur (lowpass-filtered brown noise + LFO breath), plus synth DEFENSE/OFFENSE chants via formant-filtered square waves + vibrato.
+  - `_audioBus.ts` — context init, 3 gains, volume API, localStorage persistence. Exposes `__test` for tests.
+  - `synth.ts` — ~20 one-shot SFX (snap, thud, TD siren, FG bell/miss, turnover, **UI click, UI hover, scheme select, audible, draft pick, coin flip, possession change, down change, kickoff, victory, defeat, point scored, incomplete pass whistle, error**).
+  - `crowd.ts` — `playCrowdRoar(intensity)` one-shot crowd swell + pure `isBigPlay(playResult)` predicate.
+- **Background music is intentionally absent.** Phase-1 BG chiptune was removed — user found it repetitive. The game is silent except for SFX + targeted crowd swells.
+- **Crowd noise is event-driven, not ambient.** `playCrowdRoar()` ONLY fires on big plays:
+  - Scoring plays (TD/FG/safety) → strongest swells (TD = 1.5, FG/safety = 0.8)
+  - Turnovers → 0.8
+  - 1st-down conversions OR 20+ yard gains → roar scaled to yardage (0..1.5)
+  - Routine plays (short gain, no conversion) → thud only, NO crowd noise.
 - **Wiring**:
-  - `usePhaseMusic(state, meId)` hook in `SessionRouter.tsx` picks the right track based on game phase. 3rd/4th down swaps to `tense`.
-  - Game screen starts ambient on mount + stops on unmount; plays DEFENSE/OFFENSE chant once when down hits 3+ (perspective-aware).
+  - `isBigPlay(r)` predicate in `crowd.ts` — Game.tsx checks it before firing `playCrowdRoar`.
+  - TD/FG/Safety use their distinctive sting + a delayed crowd roar.
+  - Possession change + down change get `playPossessionChange` / `playDownChange`.
   - Global click handler in `App.tsx` fires `playUiClick` on every `.btn-*` press + `playUiHover` on `[data-sfx="hover"]`.
-  - `VolumePanel.tsx` (replaces `MuteToggle.tsx`) — speaker toggle + popover with 3 sliders. Click speaker = open panel; double-click = master mute.
-- **Never** create an `AudioContext` outside `_audioBus.ts`. All sound modules route through `busFor(channel)` / `musicBus()` / `crowdBus()` so the panel can mute independently.
+  - `VolumePanel.tsx` (replaces `MuteToggle.tsx`) — speaker toggle + popover with 2 sliders (Crowd + SFX). Click speaker = open panel; double-click = master mute.
+- **Never** create an `AudioContext` outside `_audioBus.ts`. All sound modules route through `busFor(channel)` / `crowdBus()` so the panel can mute independently.
 - **Never** play a sound during render — gate everything in event handlers / useEffect. Web Audio browsers require user-gesture unlock.
 
 ### 11. tests — what works, what doesn't

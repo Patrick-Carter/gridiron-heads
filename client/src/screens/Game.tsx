@@ -13,7 +13,6 @@ import {
   initAudio,
   playSnap,
   playThud,
-  playCheer,
   playTdSiren,
   playFgBell,
   playFgMiss,
@@ -24,7 +23,7 @@ import {
   playIncomplete,
   playKickoff,
 } from '../audio/synth.js';
-import { startAmbient, stopAmbient, playDefenseChant, playOffenseChant } from '../audio/crowd.js';
+import { playCrowdRoar, isBigPlay } from '../audio/crowd.js';
 import type { SessionSnapshot } from '../hooks/useSession.js';
 import { ballSpot, type Play } from '@gridiron/shared';
 
@@ -65,35 +64,44 @@ export default function Game({
     if (lastPlayResult) {
       setIsAnimating(true);
       // === Audio: route the result through the synth ============================
-      // Scoring plays get the most distinctive stings; routine plays get a
-      // scaled cheer/thud combo so the field never feels silent.
+      // Crowd noise (playCrowdRoar) ONLY fires on big plays — scoring plays,
+      // turnovers, 1st downs, and 20+ yard gains. Routine plays get a thud
+      // and nothing else, so the field isn't a constant murmur.
       const r = lastPlayResult;
       if (r.scoring_event === 'td') {
         playTdSiren();
         setTimeout(() => playPointScored(), 350);
-        setTimeout(() => playCheer(1.5), 500);
+        setTimeout(() => playCrowdRoar(1.5), 500);
         setConfettiKey((k) => k + 1);
       } else if (r.scoring_event === 'fg') {
         playFgBell();
         setTimeout(() => playPointScored(), 200);
-        setTimeout(() => playCheer(0.6), 350);
+        setTimeout(() => playCrowdRoar(0.8), 350);
         setConfettiKey((k) => k + 1);
       } else if (r.scoring_event === 'safety') {
         playFgMiss();
         setTimeout(() => playThud(1.2), 100);
+        setTimeout(() => playCrowdRoar(0.8), 250);
         setConfettiKey((k) => k + 1);
       } else if (r.turnover && !r.scoring_event) {
         playTurnover();
-        setTimeout(() => playCheer(0.4), 100);
+        setTimeout(() => playCrowdRoar(0.8), 100);
       } else if (r.off_call?.parent === 'pass' && r.yards === 0 && !r.turnover) {
-        // Incomplete pass — 3 whistle peeps
+        // Incomplete pass — 3 whistle peeps, no crowd.
         playIncomplete();
+      } else if (isBigPlay(r)) {
+        // Non-scoring big play (1st down conversion OR 20+ yard gain): solid
+        // thud + crowd roar. Intensity scales with the yardage.
+        const intensity = Math.min(1.5, (r.yards ?? 0) / 18);
+        playThud(intensity);
+        setTimeout(() => playCrowdRoar(intensity), 120);
+        if (r.off_call?.parent === 'punt') {
+          setTimeout(() => playKickoff(), 200);
+        }
       } else {
-        // Routine play — light thud + small cheer (volume scales with yards)
+        // Routine play — just a thud. No crowd noise.
         const intensity = Math.min(1.2, Math.abs(r.yards ?? 0) / 20 + 0.2);
         playThud(intensity);
-        setTimeout(() => playCheer(intensity * 0.4), 80);
-        // Kickoff thunk on punt plays
         if (r.off_call?.parent === 'punt') {
           setTimeout(() => playKickoff(), 120);
         }
@@ -101,14 +109,7 @@ export default function Game({
     }
   }, [lastPlayResult?.seed]);
 
-  // Ambient crowd bed — start on Game mount, stop on unmount.
-  useEffect(() => {
-    startAmbient();
-    return () => stopAmbient();
-  }, []);
-
-  // Track possession + down changes for audio cues. We watch the game state
-  // refs so this only re-runs when those specific values change.
+  // Track possession + down changes for audio cues.
   const prevPossessionRef = useRef(game.possession_idx);
   const prevDownRef = useRef(game.down);
   useEffect(() => {
@@ -123,32 +124,6 @@ export default function Game({
       prevDownRef.current = game.down;
     }
   }, [game.down]);
-
-  // "DEFENSE!" chant on 3rd/4th down (fires once when down reaches 3 or 4
-  // while a play is in progress / being read).
-  const prevDefChantDownRef = useRef<number | null>(null);
-  useEffect(() => {
-    const activePhase =
-      game.phase === 'awaiting_schemes' ||
-      game.phase === 'ready_to_snap' ||
-      game.phase === 'awaiting_def_response';
-    if (
-      activePhase &&
-      game.down >= 3 &&
-      prevDefChantDownRef.current !== game.down
-    ) {
-      // Only the DEFENDING player should hear the DEFENSE chant; the offense
-      // hears the OFFENSE chant instead.
-      if (myIdx !== game.possession_idx) {
-        playDefenseChant();
-      } else {
-        playOffenseChant();
-      }
-      prevDefChantDownRef.current = game.down;
-    } else if (!activePhase) {
-      prevDefChantDownRef.current = null;
-    }
-  }, [game.down, game.phase, game.possession_idx, myIdx]);
 
   function handleAnimationDone() {
     setIsAnimating(false);

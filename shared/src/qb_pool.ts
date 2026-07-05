@@ -72,9 +72,9 @@ export function modifierDescription(m: QBModifier): string {
     case 'yards_pct':
       return `+${val}% yards on ${scope} plays`;
     case 'fake_audible_refresh':
-      return `+${val} fake audible per game`;
+      return `+${val} fake audible per drive`;
     case 'real_audible_refresh':
-      return `+${val} real audible per game`;
+      return `+${val} real audible per drive`;
   }
 }
 

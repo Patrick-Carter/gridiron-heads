@@ -232,6 +232,20 @@ describe('advanceAfterPlay', () => {
       expect(flipped.distance).toBe(10);
       expect(flipped.ball_yardline).toBe(37); // same absolute spot — new offense attacks opposite end zone
     });
+
+    it('flipPossession resets the NEW offense audible quotas (1 per drive)', () => {
+      const g = newGameState('s', emptyTeams());
+      g.audibles_used = [1, 0];
+      g.fake_audibles_used = [0, 1];
+      const flipped = flipPossession(g);
+      // New offense is player 1 — their quotas reset.
+      expect(flipped.audibles_used).toEqual([1, 0]);
+      expect(flipped.fake_audibles_used).toEqual([0, 0]);
+      // Flip back — player 0's quota also resets (new drive for them too).
+      const flippedBack = flipPossession(flipped);
+      expect(flippedBack.audibles_used).toEqual([0, 0]);
+      expect(flippedBack.fake_audibles_used).toEqual([0, 0]);
+    });
   });
 });
 

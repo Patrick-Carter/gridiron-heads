@@ -135,12 +135,22 @@ export function advanceAfterPlay(state: GameState, yards: number): AdvanceResult
 
 /** Flip possession to the other team at the current absolute spot, with a
  *  fresh 1st & 10. The new offense attacks the OPPOSITE end zone — no
- *  coordinate mirroring needed because ball_yardline is already absolute. */
+ *  coordinate mirroring needed because ball_yardline is already absolute.
+ *  Also resets the NEW offense's audible quotas (1 real + 1 fake per drive). */
 export function flipPossession(state: GameState): GameState {
+  const newOffIdx = state.possession_idx === 0 ? 1 : 0;
   return {
     ...state,
-    possession_idx: state.possession_idx === 0 ? 1 : 0,
+    possession_idx: newOffIdx,
     down: 1,
     distance: 10,
+    audibles_used: [
+      newOffIdx === 0 ? 0 : state.audibles_used[0],
+      newOffIdx === 1 ? 0 : state.audibles_used[1],
+    ] as [number, number],
+    fake_audibles_used: [
+      newOffIdx === 0 ? 0 : state.fake_audibles_used[0],
+      newOffIdx === 1 ? 0 : state.fake_audibles_used[1],
+    ] as [number, number],
   };
 }

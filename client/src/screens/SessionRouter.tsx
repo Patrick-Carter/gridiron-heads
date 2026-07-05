@@ -1,6 +1,5 @@
 import { useParams } from 'react-router-dom';
 import { useSession } from '../hooks/useSession.js';
-import { usePhaseMusic } from '../hooks/usePhaseMusic.js';
 import Lobby from './Lobby.js';
 import CoinFlip from './CoinFlip.js';
 import Draft from './Draft.js';
@@ -28,9 +27,6 @@ function SessionInner({ sessionId, playerId, playerName }: { sessionId: string; 
     playerId,
     playerName,
   );
-
-  // Drive BG music from the active game phase.
-  usePhaseMusic(state, playerId);
 
   if (!state) {
     return (

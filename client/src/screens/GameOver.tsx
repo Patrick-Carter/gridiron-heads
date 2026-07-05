@@ -2,7 +2,8 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import type { SessionSnapshot } from '../hooks/useSession.js';
 import FlashHeader from '../components/FlashHeader.js';
-import { initAudio, playVictory, playDefeat, playCheer, playUiClick } from '../audio/synth.js';
+import { initAudio, playVictory, playDefeat, playUiClick } from '../audio/synth.js';
+import { playCrowdRoar } from '../audio/crowd.js';
 
 export default function GameOver({
   state,
@@ -24,7 +25,7 @@ export default function GameOver({
     initAudio();
     if (iWon) {
       playVictory();
-      setTimeout(() => playCheer(1.5), 600);
+      setTimeout(() => playCrowdRoar(1.5), 600);
     } else {
       playDefeat();
     }
