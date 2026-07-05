@@ -4,6 +4,7 @@ import Home from './screens/Home.js';
 import Tutorial from './screens/Tutorial.js';
 import Create from './screens/Create.js';
 import Join from './screens/Join.js';
+import LobbyBrowser from './screens/LobbyBrowser.js';
 import SessionRouter from './screens/SessionRouter.js';
 import { initAudio, playUiClick, playUiHover } from './audio/synth.js';
 
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/create" element={<Create />} />
         <Route path="/join" element={<Join />} />
         <Route path="/join/:sessionId" element={<Join />} />
+        <Route path="/lobby" element={<LobbyBrowser />} />
         <Route path="/session/:id" element={<SessionRouter />} />
       </Routes>
     </BrowserRouter>

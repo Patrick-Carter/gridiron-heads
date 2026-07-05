@@ -40,6 +40,12 @@ export default function Home() {
             Join Game →
           </Link>
           <Link
+            to="/lobby"
+            className="btn-flash btn-xtra btn-go w-full text-center"
+          >
+            📡 Public Lobby
+          </Link>
+          <Link
             to="/tutorial"
             className="btn-flash btn-grape w-full text-center"
           >

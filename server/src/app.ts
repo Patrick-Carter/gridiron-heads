@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import type { Database } from 'better-sqlite3';
 import rateLimit from 'express-rate-limit';
 import { sessionsRouter } from './routes/sessions.js';
+import { lobbyRouter } from './routes/lobby.js';
 import { initDb } from './db.js';
 import { registerSocketHandlers } from './socket/handlers.js';
 import { reapStaleRooms, roomCount } from './rooms.js';
@@ -110,9 +111,20 @@ export function createApp(opts: CreateAppOpts = {}): Express {
     message: { error: 'rate_limited' },
   });
 
+  // /api/lobby polls ~every 4s while a tab is open, so give it 4x the headroom
+  // (80/min/IP ≈ 1.3 req/sec sustained). /healthz stays unmetered.
+  const lobbyLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 80,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'rate_limited' },
+  });
+
   // Sessions API — uses provided DB or opens default
   const db = opts.db ?? initDb(path.resolve(__dirname, '../data/gridiron.db'));
   app.use('/api/sessions', apiLimiter, sessionsRouter(db));
+  app.use('/api/lobby', lobbyLimiter, lobbyRouter(db));
 
   // Static client mount LAST so it doesn't shadow /api/* and /healthz
   const clientDist = path.resolve(__dirname, '../../client/dist');

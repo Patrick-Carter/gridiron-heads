@@ -12,6 +12,11 @@ export interface SessionState {
   players: { id: string; name: string; ready: boolean; is_cpu?: boolean }[];
   coin_result?: 'heads' | 'tails';
   first_possession_id?: string;
+  /** When true, this session is listed in GET /api/lobby for anyone to see.
+   *  Open public lobbies (lobby phase, 1 player) can be joined; public games
+   *  in progress expose their score. Private (default) sessions are invisible
+   *  to the lobby endpoint entirely. */
+  is_public?: boolean;
 }
 
 export const CPU_PLAYER_ID = 'cpu';
@@ -23,6 +28,10 @@ export function sessionsRouter(db: Database): Router {
   router.post('/', (req, res) => {
     const display_name = normalizeDisplayName(req.body?.display_name);
     const vs_cpu = !!req.body?.vs_cpu;
+    // Public lobbies only make sense for friend games — a vs-CPU game has
+    // no opponent to attract. Force false if vs_cpu is set so the lobby
+    // list can never accidentally include a single-player game.
+    const is_public = vs_cpu ? false : !!req.body?.is_public;
     if (!display_name) {
       return res.status(400).json({ error: 'invalid_display_name' });
     }
@@ -33,6 +42,7 @@ export function sessionsRouter(db: Database): Router {
     const state: SessionState = {
       phase: 'lobby',
       players: [{ id: player_id, name: display_name, ready: vs_cpu ? true : false }],
+      is_public,
     };
     if (vs_cpu) {
       state.players.push({

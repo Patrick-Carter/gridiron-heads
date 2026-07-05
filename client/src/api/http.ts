@@ -21,11 +21,12 @@ export interface JoinSessionResponse {
 export async function createSession(
   display_name: string,
   vs_cpu: boolean = false,
+  is_public: boolean = false,
 ): Promise<CreateSessionResponse> {
   const r = await fetch('/api/sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ display_name, vs_cpu }),
+    body: JSON.stringify({ display_name, vs_cpu, is_public }),
   });
   if (!r.ok) throw new Error(`createSession failed: ${r.status}`);
   return r.json();
@@ -55,5 +56,33 @@ export async function getSession(
   if (auth_token) headers['Authorization'] = `Bearer ${auth_token}`;
   const r = await fetch(`/api/sessions/${session_id}`, { headers });
   if (!r.ok) throw new Error(`getSession failed: ${r.status}`);
+  return r.json();
+}
+
+export interface LobbyOpenEntry {
+  session_id: string;
+  phase: 'lobby';
+  host: { id: string; name: string };
+  created_at: number;
+  join_url: string;
+}
+
+export interface LobbyLiveEntry {
+  session_id: string;
+  phase: 'draft' | 'in_game' | 'ended';
+  players: { id: string; name: string }[];
+  scores: [number, number];
+  updated_at: number;
+}
+
+export interface LobbyResponse {
+  open: LobbyOpenEntry[];
+  live: LobbyLiveEntry[];
+  generated_at: number;
+}
+
+export async function fetchLobby(): Promise<LobbyResponse> {
+  const r = await fetch('/api/lobby');
+  if (!r.ok) throw new Error(`fetchLobby failed: ${r.status}`);
   return r.json();
 }

@@ -8,6 +8,7 @@ type Mode = 'cpu' | 'friend';
 export default function Create() {
   const [name, setName] = useState('');
   const [mode, setMode] = useState<Mode>('cpu');
+  const [isPublic, setIsPublic] = useState(false);
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
 
@@ -16,7 +17,7 @@ export default function Create() {
     if (!name.trim()) return;
     setBusy(true);
     try {
-      const r = await createSession(name.trim(), mode === 'cpu');
+      const r = await createSession(name.trim(), mode === 'cpu', isPublic);
       localStorage.setItem(`gridiron:player_id:${r.session_id}`, r.player_id);
       localStorage.setItem(`gridiron:auth_token:${r.session_id}`, r.auth_token);
       localStorage.setItem(`gridiron:player_name:${r.session_id}`, name.trim());
@@ -79,12 +80,40 @@ export default function Create() {
           </div>
         </div>
 
+        {/* Public toggle — friend mode only. A public game is listed in the
+            shared lobby so anyone can find + join it (and watch the score
+            once it starts). vs-CPU games don't have an opponent to attract
+            so the toggle is hidden. */}
+        {mode === 'friend' && (
+          <div>
+            <label className="flex items-start gap-2 cursor-pointer select-none border-3 border-ink bg-cream p-2"
+                   style={{ borderWidth: 3, borderColor: '#0a0a18', background: '#fff8dc' }}>
+              <input
+                type="checkbox"
+                checked={isPublic}
+                onChange={(e) => setIsPublic(e.target.checked)}
+                data-testid="public-toggle"
+                className="mt-1 h-5 w-5 accent-lime cursor-pointer"
+              />
+              <div>
+                <div className="text-sm font-bold">
+                  📡 List in public lobby
+                </div>
+                <div className="text-xs text-ink/70 mt-0.5">
+                  Anyone can find and join this game. Once it starts, the live
+                  score is visible to other browsers too.
+                </div>
+              </div>
+            </label>
+          </div>
+        )}
+
         <button
           type="submit"
           disabled={busy || !name.trim()}
           className="btn-flash btn-xtra btn-primary w-full"
         >
-          {busy ? 'Creating…' : mode === 'cpu' ? 'Hut! Hut! Hut! →' : 'Hut! Hut! Hut! →'}
+          {busy ? 'Creating…' : 'Hut! Hut! Hut! →'}
         </button>
       </form>
     </div>
