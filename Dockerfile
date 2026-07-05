@@ -57,6 +57,15 @@ ENV NODE_ENV=production \
 USER gridiron
 EXPOSE 3000
 
+# Unraid reads this to render the clickable WebUI icon on the Docker tab.
+# [IP] and [PORT:3000] are template tokens — Unraid substitutes at render time.
+LABEL net.unraid.docker.webui="http://[IP]:[PORT:3000]/" \
+      net.unraid.docker.icon="https://raw.githubusercontent.com/Patrick-Carter/gridiron-heads/main/.github/icon.png" \
+      org.opencontainers.image.title="Gridiron Heads" \
+      org.opencontainers.image.description="2-player head-to-head browser football. First to 3, win by 2." \
+      org.opencontainers.image.source="https://github.com/Patrick-Carter/gridiron-heads" \
+      org.opencontainers.image.licenses="MIT"
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3000/healthz >/dev/null 2>&1 || exit 1
 
