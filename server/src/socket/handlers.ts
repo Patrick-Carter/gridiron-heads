@@ -17,6 +17,7 @@ import {
   isValidAudibleSub,
 } from './game_machine.js';
 import type { RoomState } from './game_machine.js';
+import { tickCpu, CPU_PLAYER_ID } from './cpu.js';
 import { TOTAL_PICKS } from '@gridiron/shared';
 import type { Play, PlaySub } from '@gridiron/shared';
 
@@ -27,13 +28,29 @@ export function getRoom(session_id: string): RoomState | undefined {
   return rooms.get(session_id);
 }
 
-export function ensureRoom(session_id: string, host_id: string, host_name: string): RoomState {
+/** Rehydrate or create a fresh in-memory room for the given session. */
+function getOrCreateRoom(
+  session_id: string,
+  host_id: string,
+  host_name: string,
+  cpu_player_id: string | null = null,
+): RoomState {
   let r = rooms.get(session_id);
   if (!r) {
-    r = newRoom(session_id, host_id, host_name);
+    r = newRoom(session_id, host_id, host_name, {
+      cpu_player_id: cpu_player_id ?? undefined,
+    });
     rooms.set(session_id, r);
   }
   return r;
+}
+
+/** Broadcast current room state to everyone in the session, then tick the CPU
+ *  if this is a vs-CPU room. Keeps the existing 2P code path byte-identical
+ *  when cpu_player_id is null (tickCpu is a no-op in that case). */
+function broadcastAndTick(io: IOServer, room: RoomState): void {
+  io.to(`session:${room.session_id}`).emit('session:state', snapshot(room));
+  tickCpu(io, room);
 }
 
 interface SocketData {
@@ -63,7 +80,13 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
           socket.emit('session:error', { error: 'no_host' });
           return;
         }
-        room = newRoom(session_id, host.id, host.name);
+        // CPU rooms have the CPU already seeded into persistedState.players[1].
+        // We can detect by is_cpu flag (CPU-only post-deploy) or by the
+        // CPU_PLAYER_ID literal (CPU rooms created before is_cpu existed).
+        const cpuId = guest?.is_cpu || guest?.id === CPU_PLAYER_ID ? guest.id : null;
+        room = newRoom(session_id, host.id, host.name, {
+          cpu_player_id: cpuId ?? undefined,
+        });
         room.players = persistedState.players;
         room.guest_id = guest?.id ?? null;
         rooms.set(session_id, room);
@@ -71,30 +94,48 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       sdata.session_id = session_id;
       sdata.player_id = player_id;
       socket.join(`session:${session_id}`);
-      // Add player if not present (or update name if display_name provided and player exists)
       const existing = room.players.find((p) => p.id === player_id);
       if (!existing) {
+        // Reject new human joins when CPU is the second player (vs-CPU is
+        // a locked 2-player room — only the host can join their own session).
+        if (room.cpu_player_id) {
+          socket.emit('session:error', { error: 'vs_cpu_locked' });
+          return;
+        }
         const result = addPlayer(room, player_id, display_name);
         if (!result.ok) {
           socket.emit('session:error', { error: result.reason });
           return;
         }
-      } else if (display_name && display_name !== existing.name) {
+      } else if (display_name && display_name !== existing.name && !existing.is_cpu) {
+        // Don't overwrite the CPU's display name on re-hydration.
         existing.name = display_name;
       }
-      io.to(`session:${session_id}`).emit('session:state', snapshot(room));
+      broadcastAndTick(io, room);
+      // CPU rooms boot the game the moment the host connects — no second
+      // ready click needed. 2P path requires the existing session:ready flow.
+      if (room.cpu_player_id && allReady(room) && !room.draft && !room.game) {
+        flipCoin(room);
+        startDraft(room);
+        broadcastAndTick(io, room);
+      }
     });
 
     socket.on('session:ready', () => {
       if (!sdata.session_id || !sdata.player_id) return;
       const room = rooms.get(sdata.session_id);
       if (!room) return;
+      // CPU players are auto-readied at room creation; human sockets ignore
+      // double-ready. Defensive: ignore if not the human.
+      const player = room.players.find((p) => p.id === sdata.player_id);
+      if (!player || player.is_cpu) return;
       setReady(room, sdata.player_id);
       io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
       if (allReady(room)) {
         flipCoin(room);
         startDraft(room);
-        io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
+        // CPU may owe a draft pick immediately if coin favored it.
+        broadcastAndTick(io, room);
       }
     });
 
@@ -102,16 +143,22 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       if (!sdata.session_id || !sdata.player_id) return;
       const room = rooms.get(sdata.session_id);
       if (!room || !room.draft) return;
+      // CPU picks are driven by tickCpu; reject human emulating CPU id.
+      if (sdata.player_id === CPU_PLAYER_ID) {
+        socket.emit('session:error', { error: 'cpu_id_reserved' });
+        return;
+      }
       const r = draftPick(room, sdata.player_id, group as any, option_id);
       if (!r.ok) {
         socket.emit('session:error', { error: r.reason });
         return;
       }
-      io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
+      broadcastAndTick(io, room);
       if (room.draft.current_turn >= TOTAL_PICKS) {
         const game = startGame(room);
         game.phase = 'awaiting_schemes';
-        io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
+        // CPU may be the first offense — let tickCpu drive it.
+        broadcastAndTick(io, room);
       }
     });
 
@@ -119,22 +166,33 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       if (!sdata.session_id || !sdata.player_id) return;
       const room = rooms.get(sdata.session_id);
       if (!room || !room.game) return;
-      if (room.game.phase !== 'awaiting_schemes') {
+      if (sdata.player_id === CPU_PLAYER_ID) {
+        socket.emit('session:error', { error: 'cpu_id_reserved' });
+        return;
+      }
+      const game = room.game;
+      if (game.phase !== 'awaiting_schemes') {
         socket.emit('session:error', { error: 'not_awaiting_schemes' });
         return;
       }
       room.pending_schemes[sdata.player_id] = { parent, sub };
       // Reveal when both committed
       if (Object.keys(room.pending_schemes).length === 2) {
-        room.game.phase = 'ready_to_snap';
+        game.phase = 'ready_to_snap';
       }
-      io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
+      // tickCpu handles the case where CPU is offense AND defense is
+      // still waiting for the human — only acts on CPU's side.
+      broadcastAndTick(io, room);
     });
 
     socket.on('game:audible', ({ target_sub }: { target_sub: PlaySub }) => {
       if (!sdata.session_id || !sdata.player_id) return;
       const room = rooms.get(sdata.session_id);
       if (!room || !room.game) return;
+      if (sdata.player_id === CPU_PLAYER_ID) {
+        socket.emit('session:error', { error: 'cpu_id_reserved' });
+        return;
+      }
       const game = room.game;
       const player_idx = room.players.findIndex((p) => p.id === sdata.player_id);
       if (player_idx === -1) return;
@@ -164,13 +222,17 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       (game as any)._pending_off_audible = { parent: currentPlay.parent, sub: target_sub };
       game.audibles_used[player_idx]++;
       game.phase = 'awaiting_def_response';
-      io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
+      broadcastAndTick(io, room);
     });
 
     socket.on('game:fake_audible', () => {
       if (!sdata.session_id || !sdata.player_id) return;
       const room = rooms.get(sdata.session_id);
       if (!room || !room.game) return;
+      if (sdata.player_id === CPU_PLAYER_ID) {
+        socket.emit('session:error', { error: 'cpu_id_reserved' });
+        return;
+      }
       const game = room.game;
       const player_idx = room.players.findIndex((p) => p.id === sdata.player_id);
       if (player_idx === -1) return;
@@ -190,13 +252,17 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       (game as any)._pending_off_fake = true;
       game.fake_audibles_used[player_idx]++;
       game.phase = 'awaiting_def_response';
-      io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
+      broadcastAndTick(io, room);
     });
 
     socket.on('game:def_audible', ({ target_sub }: { target_sub: PlaySub }) => {
       if (!sdata.session_id || !sdata.player_id) return;
       const room = rooms.get(sdata.session_id);
       if (!room || !room.game) return;
+      if (sdata.player_id === CPU_PLAYER_ID) {
+        socket.emit('session:error', { error: 'cpu_id_reserved' });
+        return;
+      }
       const game = room.game;
       const player_idx = room.players.findIndex((p) => p.id === sdata.player_id);
       if (player_idx === -1) return;
@@ -224,13 +290,17 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       }
       (game as any)._pending_def_audible = { parent: currentPlay.parent, sub: target_sub };
       game.phase = 'ready_to_snap';
-      io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
+      broadcastAndTick(io, room);
     });
 
     socket.on('game:def_stay', () => {
       if (!sdata.session_id || !sdata.player_id) return;
       const room = rooms.get(sdata.session_id);
       if (!room || !room.game) return;
+      if (sdata.player_id === CPU_PLAYER_ID) {
+        socket.emit('session:error', { error: 'cpu_id_reserved' });
+        return;
+      }
       const game = room.game;
       const player_idx = room.players.findIndex((p) => p.id === sdata.player_id);
       const defIdx = game.possession_idx === 0 ? 1 : 0;
@@ -238,13 +308,17 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       if (game.phase !== 'awaiting_def_response') return;
       (game as any)._pending_def_audible = null;
       game.phase = 'ready_to_snap';
-      io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
+      broadcastAndTick(io, room);
     });
 
     socket.on('game:snap', () => {
       if (!sdata.session_id) return;
       const room = rooms.get(sdata.session_id);
       if (!room || !room.game) return;
+      if (sdata.player_id === CPU_PLAYER_ID) {
+        socket.emit('session:error', { error: 'cpu_id_reserved' });
+        return;
+      }
       const game = room.game;
       if (game.phase !== 'ready_to_snap') return;
       const seed = Math.floor(Math.random() * 2 ** 32);
@@ -258,7 +332,7 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       const gameEnded = (game.phase as string) === 'ended';
       if (!gameEnded) game.phase = 'play_anim';
       io.to(`session:${sdata.session_id}`).emit('play:result', { result });
-      io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
+      broadcastAndTick(io, room);
       if (gameEnded) return; // skip auto-advance — game is over, broadcast is final
       // Auto-flow: play_anim → between_plays → awaiting_schemes without requiring
       // any client to click "Next Play". The defense doesn't need to manually advance.
@@ -266,14 +340,14 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       setTimeout(() => {
         if (room.game?.phase === 'play_anim') {
           room.game.phase = 'between_plays';
-          io.to(`session:${sid}`).emit('session:state', snapshot(room));
+          broadcastAndTick(io, room);
         }
       }, 2000);
       setTimeout(() => {
         if (room.game?.phase === 'between_plays') {
           room.game.phase = 'awaiting_schemes';
           clearSchemes(room);
-          io.to(`session:${sid}`).emit('session:state', snapshot(room));
+          broadcastAndTick(io, room);
         }
       }, 4500);
     });
@@ -283,16 +357,21 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       if (!sdata.session_id) return;
       const room = rooms.get(sdata.session_id);
       if (!room || !room.game) return;
+      if (sdata.player_id === CPU_PLAYER_ID) {
+        socket.emit('session:error', { error: 'cpu_id_reserved' });
+        return;
+      }
       const game = room.game;
       if (game.phase === 'ended') return;
       if (game.phase !== 'between_plays' && game.phase !== 'play_anim') return;
       game.phase = 'awaiting_schemes';
       clearSchemes(room);
-      io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
+      broadcastAndTick(io, room);
     });
 
     socket.on('disconnect', () => {
       // v1: keep room alive on disconnect (could add forfeit logic later)
+      // CPU never disconnects.
     });
   });
 }

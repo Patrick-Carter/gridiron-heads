@@ -3,8 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { createSession } from '../api/http.js';
 import FlashHeader from '../components/FlashHeader.js';
 
+type Mode = 'cpu' | 'friend';
+
 export default function Create() {
   const [name, setName] = useState('');
+  const [mode, setMode] = useState<Mode>('cpu');
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
 
@@ -13,7 +16,7 @@ export default function Create() {
     if (!name.trim()) return;
     setBusy(true);
     try {
-      const r = await createSession(name.trim());
+      const r = await createSession(name.trim(), mode === 'cpu');
       localStorage.setItem(`gridiron:player_id:${r.session_id}`, r.player_id);
       localStorage.setItem(`gridiron:player_name:${r.session_id}`, name.trim());
       navigate(`/session/${r.session_id}`);
@@ -46,16 +49,42 @@ export default function Create() {
             autoFocus
           />
         </label>
+
+        {/* Mode picker — two big chunky buttons so it reads at a glance. */}
+        <div>
+          <span className="block text-sm font-bold mb-1">Opponent</span>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setMode('cpu')}
+              data-testid="mode-cpu"
+              className={`btn-flash btn-xtra ${mode === 'cpu' ? 'btn-primary' : 'btn-ghost'}`}
+            >
+              🤖 vs CPU
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('friend')}
+              data-testid="mode-friend"
+              className={`btn-flash btn-xtra ${mode === 'friend' ? 'btn-cool' : 'btn-ghost'}`}
+            >
+              🤝 vs Friend
+            </button>
+          </div>
+          <div className="text-xs text-ink/70 mt-2 text-center">
+            {mode === 'cpu'
+              ? 'You\'ll face the CPU Bot 🤖 — solo play, no waiting.'
+              : 'You\'ll get a share URL to send to your friend.'}
+          </div>
+        </div>
+
         <button
           type="submit"
           disabled={busy || !name.trim()}
           className="btn-flash btn-xtra btn-primary w-full"
         >
-          {busy ? 'Creating…' : 'Hut! Hut! Hut! →'}
+          {busy ? 'Creating…' : mode === 'cpu' ? 'Hut! Hut! Hut! →' : 'Hut! Hut! Hut! →'}
         </button>
-        <div className="text-xs text-center text-ink/70">
-          You'll get a share URL to send to your opponent.
-        </div>
       </form>
     </div>
   );

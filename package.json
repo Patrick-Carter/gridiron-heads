@@ -13,7 +13,8 @@
     "start": "node server/dist/index.js",
     "test": "vitest run",
     "typecheck": "tsc -b shared server client",
-    "smoke": "node scripts/browser-smoke.mjs"
+    "smoke": "node scripts/browser-smoke.mjs",
+    "smoke:cpu": "node scripts/browser-smoke-cpu.mjs"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

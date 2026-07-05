@@ -31,7 +31,7 @@ export interface RoomState {
   session_id: string;
   host_id: string; // player_id of session creator
   guest_id: string | null;
-  players: { id: string; name: string; ready: boolean }[];
+  players: { id: string; name: string; ready: boolean; is_cpu?: boolean }[];
   coin_result: 'heads' | 'tails' | null;
   first_possession_id: string | null;
   draft: DraftState | null;
@@ -46,18 +46,26 @@ export interface RoomState {
   current_play: Play | null;
   /** RNG instance for current play (pre-resolution) */
   current_play_rng_seed: number | null;
+  /** Player id of the CPU opponent, when this is a vs-CPU room. null otherwise. */
+  cpu_player_id: string | null;
 }
 
 export function newRoom(
   session_id: string,
   host_id: string,
   host_name: string,
+  opts: { cpu_player_id?: string | null; cpu_name?: string } = {},
 ): RoomState {
+  const cpuId = opts.cpu_player_id ?? null;
+  const players: RoomState['players'] = [{ id: host_id, name: host_name, ready: false }];
+  if (cpuId) {
+    players.push({ id: cpuId, name: opts.cpu_name ?? 'CPU Bot', ready: true, is_cpu: true });
+  }
   return {
     session_id,
     host_id,
-    guest_id: null,
-    players: [{ id: host_id, name: host_name, ready: false }],
+    guest_id: cpuId, // CPU also fills the guest slot for index consistency
+    players,
     coin_result: null,
     first_possession_id: null,
     draft: null,
@@ -67,6 +75,7 @@ export function newRoom(
     audible_state: 'none',
     current_play: null,
     current_play_rng_seed: null,
+    cpu_player_id: cpuId,
   };
 }
 

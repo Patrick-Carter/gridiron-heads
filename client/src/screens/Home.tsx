@@ -23,6 +23,7 @@ export default function Home() {
           <li>🏈 Run, Pass, Punt, or FG every down</li>
           <li>🔁 Sub-calls flip on the audibles</li>
           <li>🌟 FG = <strong>0.5</strong> pts · TD = <strong>1</strong> pt</li>
+          <li>🤖 New: solo play vs the <strong>CPU Bot</strong></li>
         </ul>
 
         <div className="space-y-3 pt-2">

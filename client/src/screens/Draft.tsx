@@ -16,9 +16,11 @@ export default function Draft({
   const draft = state.draft!;
   const myTurn = draft.current_picker_id === meId;
   const opponentId = state.players.find((p) => p.id !== meId)!.id;
+  const opponentIsCpu = (state.players.find((p) => p.id !== meId) as any)?.is_cpu === true;
   const myTeam = draft.picks[meId];
   const oppTeam = draft.picks[opponentId];
   const currentPickerName = state.players.find((p) => p.id === draft.current_picker_id)?.name ?? '?';
+  const currentPickerIsCpu = (state.players.find((p) => p.id === draft.current_picker_id) as any)?.is_cpu === true;
 
   function pick(group: string, optionId: string) {
     send(EVENTS.DRAFT_PICK, { group, option_id: optionId });
@@ -52,6 +54,8 @@ export default function Draft({
           <div className="text-base md:text-lg font-bold">
             {myTurn ? (
               <span className="chip !bg-lime">PICK ANY GROUP BELOW!</span>
+            ) : currentPickerIsCpu ? (
+              <span>🤖 CPU Bot is thinking…</span>
             ) : (
               <span>Hang tight — they're deciding…</span>
             )}
@@ -123,7 +127,10 @@ export default function Draft({
                 {oppPickHere && (
                   <div className="border-3 border-ink bg-maroon/15 p-2 text-xs"
                        style={{ borderWidth: 3, borderColor: '#0a0a18', background: '#c8102e22' }}>
-                    <div className="font-bold text-maroon">OPP: {oppPickHere.name}</div>
+                    <div className="font-bold text-maroon flex items-center gap-1">
+                      {opponentIsCpu && <span className="sticker !text-[10px]">🤖</span>}
+                      OPP: {oppPickHere.name}
+                    </div>
                     {oppPickHere.skill != null && (
                       <div className="text-ink/70">skill {oppPickHere.skill}</div>
                     )}

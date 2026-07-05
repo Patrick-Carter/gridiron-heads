@@ -4,16 +4,20 @@ import type { Database } from 'better-sqlite3';
 
 export interface SessionState {
   phase: 'lobby' | 'coin' | 'draft' | 'in_game' | 'ended';
-  players: { id: string; name: string; ready: boolean }[];
+  players: { id: string; name: string; ready: boolean; is_cpu?: boolean }[];
   coin_result?: 'heads' | 'tails';
   first_possession_id?: string;
 }
+
+export const CPU_PLAYER_ID = 'cpu';
+export const CPU_PLAYER_NAME = 'CPU Bot';
 
 export function sessionsRouter(db: Database): Router {
   const router = Router();
 
   router.post('/', (req, res) => {
     const display_name = (req.body?.display_name ?? '').trim();
+    const vs_cpu = !!req.body?.vs_cpu;
     if (!display_name) {
       return res.status(400).json({ error: 'display_name required' });
     }
@@ -22,8 +26,18 @@ export function sessionsRouter(db: Database): Router {
     const now = Date.now();
     const state: SessionState = {
       phase: 'lobby',
-      players: [{ id: player_id, name: display_name, ready: false }],
+      players: [{ id: player_id, name: display_name, ready: vs_cpu ? true : false }],
     };
+    if (vs_cpu) {
+      // Seed the CPU into the persisted state so a page-reload + rehydrate
+      // sees both players and the existing 2-player logic keeps working.
+      state.players.push({
+        id: CPU_PLAYER_ID,
+        name: CPU_PLAYER_NAME,
+        ready: true,
+        is_cpu: true,
+      });
+    }
     db.prepare(
       'INSERT INTO sessions (id, created_at, last_activity_at, state) VALUES (?, ?, ?, ?)',
     ).run(session_id, now, now, JSON.stringify(state));
@@ -33,7 +47,7 @@ export function sessionsRouter(db: Database): Router {
     res.json({
       session_id,
       player_id,
-      share_url: `/join/${session_id}`,
+      share_url: vs_cpu ? null : `/join/${session_id}`,
       state,
     });
   });
@@ -49,6 +63,11 @@ export function sessionsRouter(db: Database): Router {
       .get(session_id) as { state: string } | undefined;
     if (!row) return res.status(404).json({ error: 'not_found' });
     const state: SessionState = JSON.parse(row.state);
+    // vs-CPU rooms are locked — only the host can rejoin their own session.
+    const hasCpu = state.players.some((p) => p.is_cpu || p.id === CPU_PLAYER_ID);
+    if (hasCpu) {
+      return res.status(409).json({ error: 'vs_cpu_locked' });
+    }
     if (state.players.length >= 2) {
       return res.status(409).json({ error: 'session_full' });
     }

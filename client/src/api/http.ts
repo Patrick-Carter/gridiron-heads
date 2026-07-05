@@ -3,7 +3,8 @@
 export interface CreateSessionResponse {
   session_id: string;
   player_id: string;
-  share_url: string;
+  /** null when vs_cpu=true (no one to share with). */
+  share_url: string | null;
   state: any;
 }
 
@@ -12,11 +13,14 @@ export interface JoinSessionResponse {
   state: any;
 }
 
-export async function createSession(display_name: string): Promise<CreateSessionResponse> {
+export async function createSession(
+  display_name: string,
+  vs_cpu: boolean = false,
+): Promise<CreateSessionResponse> {
   const r = await fetch('/api/sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ display_name }),
+    body: JSON.stringify({ display_name, vs_cpu }),
   });
   if (!r.ok) throw new Error(`createSession failed: ${r.status}`);
   return r.json();
