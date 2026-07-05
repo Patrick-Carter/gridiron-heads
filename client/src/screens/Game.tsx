@@ -5,6 +5,7 @@ import SchemePicker from '../components/SchemePicker.js';
 import AudiblePanel from '../components/AudiblePanel.js';
 import ScorePanel from '../components/ScorePanel.js';
 import PlayLog from '../components/PlayLog.js';
+import RosterModal from '../components/RosterModal.js';
 import type { SessionSnapshot } from '../hooks/useSession.js';
 import type { Play } from '@gridiron/shared';
 
@@ -50,12 +51,42 @@ export default function Game({
 
   const pendingMyScheme = state.pending_schemes?.[meId];
 
+  // Roster overlay — null = closed; 0 = host's team; 1 = guest's team.
+  const [rosterIdx, setRosterIdx] = useState<0 | 1 | null>(null);
+  const rosterOpen = rosterIdx !== null;
+  const rosterTeam = rosterIdx !== null ? game.teams[rosterIdx] : null;
+  const rosterTeamName = rosterIdx !== null ? players[rosterIdx]?.name ?? '?' : '';
+
   return (
     <div className="min-h-full p-3 md:p-4 max-w-6xl mx-auto">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
         {/* Left: Field + Score */}
         <div className="lg:col-span-2 space-y-3">
           <ScorePanel scores={game.scores} myIdx={myIdx} players={players} />
+
+          {/* Roster trigger — click either name to open that team's full
+              6-group roster. Lives above the field so it never competes with
+              the picker / audibles panel on the right rail. */}
+          <div className="panel-flash !py-2">
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <span className="text-xs font-bold text-ink/60">👇 Rosters</span>
+              <button
+                onClick={() => setRosterIdx(0)}
+                data-testid="roster-trigger-0"
+                className={`btn-flash ${myIdx === 0 ? 'btn-go' : 'btn-danger'} text-sm !min-h-0 py-1.5`}
+              >
+                {myIdx === 0 && '⭐ '}{players[0]?.name}{myIdx === 0 && ' (YOU)'}
+              </button>
+              <span className="text-ink/40 font-black text-xs">vs</span>
+              <button
+                onClick={() => setRosterIdx(1)}
+                data-testid="roster-trigger-1"
+                className={`btn-flash ${myIdx === 1 ? 'btn-go' : 'btn-danger'} text-sm !min-h-0 py-1.5`}
+              >
+                {myIdx === 1 && '⭐ '}{players[1]?.name}{myIdx === 1 && ' (YOU)'}
+              </button>
+            </div>
+          </div>
 
           <div className="field-frame">
             <Field
@@ -221,6 +252,20 @@ export default function Game({
           <PlayLog history={game.history || []} myIdx={myIdx} />
         </div>
       </div>
+
+      {/* Roster overlay — D031: click a player name to inspect their team's
+          6-group roster. Dismiss with ESC / X / backdrop click, or flip to
+          the other team with the swap button. */}
+      <RosterModal
+        open={rosterOpen}
+        team={rosterTeam}
+        teamName={rosterTeamName}
+        ownerLabel={rosterIdx === myIdx ? 'YOU' : 'OPP'}
+        myIdx={myIdx}
+        focusIdx={(rosterIdx ?? 0) as 0 | 1}
+        onClose={() => setRosterIdx(null)}
+        onSwitch={(idx) => setRosterIdx(idx)}
+      />
     </div>
   );
 }

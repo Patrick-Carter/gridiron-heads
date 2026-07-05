@@ -267,6 +267,32 @@ try {
   ).catch(() => {});
   ok('draft walked; game entered');
 
+  // -- D031: roster triggers live above the canvas as clickable name chips.
+  // Click host's name → modal opens, all 6 groups visible.
+  await pageA.waitForSelector('[data-testid="roster-trigger-0"]', { timeout: 5000 });
+  await pageA.waitForSelector('[data-testid="roster-trigger-1"]', { timeout: 5000 });
+  ok('roster triggers above canvas');
+  await pageA.click('[data-testid="roster-trigger-1"]');
+  await pageA.waitForSelector('[data-testid="roster-modal-1"]', { timeout: 3000 });
+  await expectText(pageA, "roster", 'roster modal title (case-insensitive)');
+  // 6 group chips should be visible.
+  const groupCount = await pageA.locator('[data-testid="roster-modal-1"] .chip').count();
+  if (groupCount < 6) {
+    await pageA.screenshot({ path: path.join(SHOTS, '_fail.png'), fullPage: true });
+    fail(`roster modal shows ${groupCount} group chips, expected ≥6`);
+  }
+  ok(`roster modal shows ${groupCount} group rows`);
+  // Screenshot with the modal open
+  await pageA.screenshot({ path: path.join(SHOTS, '06-roster-modal.png'), fullPage: true });
+  // Swap to other team
+  await pageA.locator('[data-testid="roster-modal-1"] button:has-text("See YOU")').click();
+  await pageA.waitForSelector('[data-testid="roster-modal-0"]', { timeout: 3000 });
+  ok('roster modal swaps to YOU team');
+  // Close via X
+  await pageA.locator('[data-testid="roster-modal-0"] button[aria-label="Close roster"]').click();
+  await pageA.waitForSelector('[data-testid="roster-modal-0"]', { state: 'detached', timeout: 3000 });
+  ok('roster modal closes via X');
+
   // -- Game: host picks scheme.
   // Wait for SchemePicker to be present, then pick RUN/INSIDE.
   // Scope to the SchemePicker panel so we don't accidentally click a

@@ -194,6 +194,30 @@ fixed height + `rounded` border in favor of `aspect-ratio` 2:1 + a
 - Disconnect handling (forfeit / pause)
 - Left-drive / mirrored field (attempted, reverted — see D020)
 
+## D031 — 2026-07-05 — Roster view on the play screen (ACCEPTED)
+**Decision:** During any in-game phase the Game screen shows a "Rosters"
+trigger row above the canvas with two clickable name chips — one per
+team. Clicking a name opens an overlay modal (`<RosterModal>`) showing
+all 6 position groups for that team (QB / D_LINE / O_LINE / OFF_SKILL /
+DEF_SKILL / KICKER) with the picked player's name + skill (or modifier
+description for the QB).
+**Plus:** The modal's title bar is tinted lime when the displayed
+team is "YOU" and maroon when "OPP" — picks up the existing role-tint
+language. Dismiss via ESC key, X button, clicking the backdrop, or
+the "⇄ See YOU / OPP" swap button toggles to the other team.
+**Rationale:** Players had no way to remember which groups/QBs had
+been drafted mid-game; reading the QB's modifier was especially hidden
+since it surfaced only during the Draft pick phase. The roster overlay
+is a read-only review surface, no state changes — fits the rest of the
+Flash-game aesthetic (cream panel + heavy borders + role-tinted chips).
+**Tests:** Smoke (`scripts/browser-smoke.mjs`) added 5 new assertions
+(roster triggers exist, modal opens with all 6 group rows, swap works,
+X closes cleanly). All 23/23 OK. Visual verification: modal shows
+correct player names + skills for the team (see screenshot
+`screenshots/06-roster-modal.png`).
+**Server / data:** No backend change — `state.game.teams[i]` is
+already broadcast in every `session:state`.
+
 ## D026 — 2026-07-04 — Fun names for skill-group draftees (ACCEPTED)
 **Decision:** Skill position groups (D_LINE / O_LINE / OFF_SKILL /
 DEF_SKILL / KICKER) get a per-group name pool (~30 entries each) of
