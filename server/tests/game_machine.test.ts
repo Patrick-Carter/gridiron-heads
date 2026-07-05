@@ -283,6 +283,66 @@ describe('Play resolution', () => {
     }
   });
 
+  // Direction-aware: when team 1 has the ball (possession_idx=1), they
+  // attack toward yardline 0. A play from yardline 75 with positive yards
+  // should reduce ball_yardline (move left), not increase it.
+  it('team 1 offense moves ball toward 0 (direction is honored)', () => {
+    let succeeded = false;
+    for (let s = 1; s < 500 && !succeeded; s++) {
+      const r = setupReadyToSnapRoom();
+      // Flip possession to team 1
+      r.game!.possession_idx = 1;
+      r.game!.ball_yardline = 75;
+      // Big skill gap so offense wins the roll
+      r.game!.teams[0].off_skill = { id: 'OFF0', group: 'OFF_SKILL', skill: 1, name: 'A' };
+      r.game!.teams[0].def_skill = { id: 'DEFD0', group: 'DEF_SKILL', skill: 1, name: 'A' };
+      r.game!.teams[1].off_skill = { id: 'OFF1', group: 'OFF_SKILL', skill: 100, name: 'B' };
+      r.game!.teams[1].def_skill = { id: 'DEFD1', group: 'DEF_SKILL', skill: 1, name: 'B' };
+      const offIdx = r.game!.possession_idx; // 1
+      const defIdx = 0;
+      r.pending_schemes[r.players[offIdx].id] = { parent: 'run', sub: 'inside' };
+      r.pending_schemes[r.players[defIdx].id] = { parent: 'pass', sub: 'deep' };
+      const { result } = resolveCurrentPlay(r, s);
+      if (!result.turnover && result.yards > 0) {
+        // Ball moved LEFT (toward 0). Pre-play yardline was 75, post is lower.
+        expect(result.yardline_after).toBeLessThan(75);
+        expect(result.offense_direction).toBe(-1);
+        succeeded = true;
+      }
+    }
+    expect(succeeded).toBe(true);
+  });
+
+  it('team 1 turnover-on-downs: new offense (team 0) takes ball at LOS with 1st & 10', () => {
+    // Force 4th down with the offense at team 1 (attacking toward 0).
+    // After a failed conversion, team 0 should get the ball with a fresh
+    // 1st & 10 — meaning team 0 now attacks toward 100 from the new yardline.
+    const r = setupReadyToSnapRoom();
+    r.game!.possession_idx = 1;
+    r.game!.down = 4;
+    r.game!.distance = 99;
+    r.game!.ball_yardline = 50;
+    r.game!.teams[0].off_skill = { id: 'OFF0', group: 'OFF_SKILL', skill: 1, name: 'A' };
+    r.game!.teams[1].off_skill = { id: 'OFF1', group: 'OFF_SKILL', skill: 100, name: 'B' };
+    r.game!.teams[1].def_skill = { id: 'DEFD1', group: 'DEF_SKILL', skill: 1, name: 'B' };
+    r.game!.teams[0].def_skill = { id: 'DEFD0', group: 'DEF_SKILL', skill: 1, name: 'A' };
+    const offPlayerId = r.players[1].id;
+    const defPlayerId = r.players[0].id;
+    r.pending_schemes[offPlayerId] = { parent: 'run', sub: 'inside' };
+    r.pending_schemes[defPlayerId] = { parent: 'pass', sub: 'deep' };
+    const { result } = resolveCurrentPlay(r, 7);
+    // After the play, possession should have flipped to team 0 and they
+    // should have a fresh 1st & 10. If yards happened to convert (unlikely
+    // with distance=99), still verify downs state.
+    expect(r.game!.possession_idx).toBe(0);
+    expect(r.game!.down).toBe(1);
+    expect(r.game!.distance).toBe(10);
+    // New direction for team 0 = +1 (toward 100)
+    if (!result.turnover && Math.abs(result.yards) < 99) {
+      expect(result.offense_direction).toBe(-1); // the play itself was -1
+    }
+  });
+
   it('yards move the ball forward on offense', () => {
     const startYardline = 25;
     let yardMoved = false;
