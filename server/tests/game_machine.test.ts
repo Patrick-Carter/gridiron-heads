@@ -188,6 +188,39 @@ describe('Play resolution', () => {
     expect(succeeded).toBe(true);
   });
 
+  it('parent mismatch rewards offense: average yards are much higher than matched-parent', () => {
+    // Same skills. With matching parents, yardage depends on fair roll.
+    // With mismatch, the bonus kicks in and average gain should be > matched.
+    let matchedTotal = 0;
+    let matchedCount = 0;
+    let mismatchTotal = 0;
+    let mismatchCount = 0;
+    const TRIALS = 1500;
+    for (let i = 0; i < TRIALS; i++) {
+      // Matched
+      const m = setupReadyToSnapRoom();
+      m.pending_schemes[m.players[0].id] = { parent: 'pass', sub: 'deep' };
+      m.pending_schemes[m.players[1].id] = { parent: 'pass', sub: 'short' };
+      const r1 = resolveCurrentPlay(m, i + 1);
+      if (!r1.result.turnover) {
+        matchedTotal += Math.max(0, r1.result.yards);
+        matchedCount++;
+      }
+      // Mismatched
+      const mm = setupReadyToSnapRoom();
+      mm.pending_schemes[mm.players[0].id] = { parent: 'pass', sub: 'deep' };
+      mm.pending_schemes[mm.players[1].id] = { parent: 'run', sub: 'inside' };
+      const r2 = resolveCurrentPlay(mm, i + 1001);
+      if (!r2.result.turnover) {
+        mismatchTotal += Math.max(0, r2.result.yards);
+        mismatchCount++;
+      }
+    }
+    const matchedAvg = matchedCount > 0 ? matchedTotal / matchedCount : 0;
+    const mismatchAvg = mismatchCount > 0 ? mismatchTotal / mismatchCount : 0;
+    expect(mismatchAvg).toBeGreaterThan(matchedAvg + 3);
+  });
+
   it('yards move the ball forward on offense', () => {
     const startYardline = 25;
     let yardMoved = false;

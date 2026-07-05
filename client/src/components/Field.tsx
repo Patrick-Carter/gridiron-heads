@@ -25,30 +25,35 @@ const FIELD_W = 800;
 const FIELD_H = 400;
 const YARD = FIELD_W / 100; // 8 px per yard
 
-/** Build offensive lineup (faces direction of attack).
- *  QB 5 yds behind LOS, 5 O-Line on LOS, 2 WR 5 yds ahead at the sidelines. */
+/** Build offensive lineup.
+ *  Offense lines up BEHIND the LOS (x offsets are negative or zero).
+ *  - QB: 5 yards behind LOS
+ *  - O-Line: 5 across on the LOS
+ *  - WR: slot/tight alignment, 2 yds behind LOS at the sidelines */
 function buildOffense(): Lineup {
   const yMid = 0.5;
   const oline: [number, number][] = [];
-  // 5 linemen on the LOS, slightly staggered up/down for visual interest
+  // 5 linemen on the LOS, spread across the field vertically for visual interest
   for (let i = 0; i < 5; i++) {
     const t = (i + 0.5) / 5;
-    oline.push([0, yMid - 0.10 + t * 0.20]); // 5 across at LOS (y spread)
+    oline.push([0, 0.30 + t * 0.40]); // y range 0.30-0.70
   }
   const qb: [number, number] = [-5, yMid];
   const wr: [number, number][] = [
-    [5, 0.18],   // top wide receiver
-    [5, 0.82],   // bottom wide receiver
+    [-2, 0.15],  // top slot WR
+    [-2, 0.85],  // bottom slot WR
   ];
   return { qb, oline, wr, dline: [], cb: [] };
 }
 
-/** Build defensive lineup. D-Line on LOS, CBs 8 yds deep and wide. */
+/** Build defensive lineup. Defense is AHEAD of LOS (positive x offsets).
+ *  - D-Line: just ahead of LOS (1yd) to avoid overlapping O-Line pixels
+ *  - CBs: 8 yds deep, wide */
 function buildDefense(): Lineup {
   const dline: [number, number][] = [];
   for (let i = 0; i < 4; i++) {
     const t = (i + 0.5) / 4;
-    dline.push([0, 0.25 + t * 0.5]);
+    dline.push([1, 0.30 + t * 0.40]);
   }
   const cb: [number, number][] = [
     [8, 0.12],
@@ -87,6 +92,15 @@ export default function Field({
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    // When playResult becomes null (user clicked Next Play), cancel any in-flight
+    // animation and clear the canvas so the static lineups render fresh.
+    if (!playResult) {
+      if (animationRef.current != null) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
     // Direction of attack for the current offense:
     // possession_idx === 0 → offense attacks right (yardline 0→100)
     // possession_idx === 1 → offense attacks left (yardline 100→0)
@@ -96,7 +110,7 @@ export default function Field({
     const def = buildDefense();
     drawPlayerSet(ctx, off, ballYardline, direction, '#e6edf3');
     drawPlayerSet(ctx, def, ballYardline, direction, '#f85149');
-  }, [ballYardline, possessionIdx]);
+  }, [ballYardline, possessionIdx, playResult]);
 
   useEffect(() => {
     if (!playResult || !isAnimating) return;
@@ -175,9 +189,10 @@ function drawField(
   ctx.lineTo(losX, h);
   ctx.stroke();
   ctx.setLineDash([]);
+  // LOS label — placed on the "behind" side of the LOS (where the offense stands)
   ctx.fillStyle = '#fde047';
   ctx.font = 'bold 11px monospace';
-  ctx.fillText('LOS', losX + (direction === 1 ? 4 : -28), 14);
+  ctx.fillText('LOS', losX + (direction === 1 ? -28 : 4), 14);
   // First down marker — 10 yards AHEAD of LOS in direction of attack
   const fdYardline = ballYardline + 10 * direction;
   const fdX = (fdYardline / 100) * w;
@@ -190,8 +205,9 @@ function drawField(
     ctx.lineTo(fdX, h);
     ctx.stroke();
     ctx.setLineDash([]);
+    // 1ST label — placed on the "ahead" side of the marker (further from LOS)
     ctx.fillStyle = '#fb923c';
-    ctx.fillText('1ST', fdX + (direction === 1 ? -22 : 4), h - 6);
+    ctx.fillText('1ST', fdX + (direction === 1 ? 4 : -28), h - 6);
   }
   // Hash marks
   ctx.strokeStyle = 'rgba(255,255,255,0.25)';
