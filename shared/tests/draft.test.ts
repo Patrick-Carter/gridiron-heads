@@ -1,0 +1,84 @@
+import { describe, it, expect } from 'vitest';
+import { generateDraft, PICK_ORDER, PICKS_PER_TEAM, TOTAL_PICKS } from '../src/draft.js';
+import { mulberry32 } from '../src/rng.js';
+
+describe('generateDraft', () => {
+  it('produces 2 options per skill group + 3 QBs', () => {
+    const rng = mulberry32(1);
+    const pool = generateDraft(rng);
+    expect(pool.D_LINE).toHaveLength(2);
+    expect(pool.O_LINE).toHaveLength(2);
+    expect(pool.OFF_SKILL).toHaveLength(2);
+    expect(pool.DEF_SKILL).toHaveLength(2);
+    expect(pool.KICKER).toHaveLength(2);
+    expect(pool.QB).toHaveLength(3);
+  });
+
+  it('every skill pair satisfies the 25% gap cap', () => {
+    for (let seed = 0; seed < 200; seed++) {
+      const rng = mulberry32(seed + 1);
+      const pool = generateDraft(rng);
+      for (const group of ['D_LINE', 'O_LINE', 'OFF_SKILL', 'DEF_SKILL', 'KICKER'] as const) {
+        const [a, b] = pool[group] as Array<{ skill: number }>;
+        const hi = Math.max(a.skill, b.skill);
+        const lo = Math.min(a.skill, b.skill);
+        const gap = (hi - lo) / hi;
+        expect(gap).toBeLessThanOrEqual(0.25 + 1e-9);
+        expect(a.skill).toBeGreaterThanOrEqual(50);
+        expect(b.skill).toBeLessThanOrEqual(100);
+      }
+    }
+  });
+
+  it('1000 generations → no throws', () => {
+    for (let seed = 0; seed < 1000; seed++) {
+      const rng = mulberry32(seed + 1);
+      expect(() => generateDraft(rng)).not.toThrow();
+    }
+  });
+
+  it('same seed → same pool (deterministic)', () => {
+    const a = generateDraft(mulberry32(42));
+    const b = generateDraft(mulberry32(42));
+    expect(a.D_LINE[0].skill).toBe(b.D_LINE[0].skill);
+    expect(a.QB[0].id).toBe(b.QB[0].id);
+  });
+
+  it('option ids are unique within a pool', () => {
+    const pool = generateDraft(mulberry32(7));
+    const ids: string[] = [];
+    for (const group of Object.keys(pool)) {
+      for (const opt of pool[group as keyof typeof pool]) {
+        ids.push(opt.id);
+      }
+    }
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('every option has valid group + skill (skill groups) or modifier (QB)', () => {
+    const pool = generateDraft(mulberry32(11));
+    for (const group of ['D_LINE', 'O_LINE', 'OFF_SKILL', 'DEF_SKILL', 'KICKER'] as const) {
+      for (const opt of pool[group]) {
+        expect(opt.group).toBe(group);
+        expect(opt.skill).toBeGreaterThanOrEqual(50);
+        expect(opt.skill).toBeLessThanOrEqual(100);
+      }
+    }
+    for (const qb of pool.QB) {
+      expect(qb.group).toBe('QB');
+      expect(qb.modifier.value).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('pick order constants', () => {
+  it('PICK_ORDER has 6 entries: QB + 5 skill groups', () => {
+    expect(PICK_ORDER).toHaveLength(6);
+    expect(PICK_ORDER).toContain('QB');
+    expect(PICK_ORDER).toContain('KICKER');
+  });
+  it('PICKS_PER_TEAM = 6, TOTAL_PICKS = 12', () => {
+    expect(PICKS_PER_TEAM).toBe(6);
+    expect(TOTAL_PICKS).toBe(12);
+  });
+});
