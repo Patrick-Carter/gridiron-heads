@@ -1,0 +1,86 @@
+<?xml version="1.0"?>
+<Container version="2">
+
+  <!--
+    Gridiron Heads - 2-player head-to-head browser football.
+    Container: Express + Socket.IO + static React client on :3000.
+
+    Install:
+      1. Drop this file into /boot/config/plugins/dockerMan/templates-user/
+      2. In Unraid, Settings -> Docker -> Template repositories, ensure
+         "Custom Templates" or "User Templates" is enabled.
+      3. The container will appear under "Add Container". Fill in the
+         Repository tag (e.g. :latest or a pinned sha) and Appdata path.
+
+    Exposing to the internet:
+      This container listens on :3000 on the Unraid host. Point a
+      Cloudflare Tunnel (cloudflared on the host or as a separate
+      container) at http://localhost:3000 and route a public hostname
+      to it. WebSocket upgrades are passed through transparently by
+      the tunnel.
+  -->
+
+  <Name>gridiron-heads</Name>
+  <Repository>ghcr.io/patrick-carter/gridiron-heads</Repository>
+  <Registry>ghcr.io</Registry>
+  <Tag>latest</Tag>
+  <HubURL>https://github.com/patrick-carter/gridiron-heads</HubURL>
+  <Icon>https://raw.githubusercontent.com/patrick-carter/gridiron-heads/main/.github/icon.png</Icon>
+  <Description>2-player head-to-head browser football. Draft, scheme pick, audible, snap. First to 3, win by 2.</Description>
+  <Category>Games:</Category>
+  <Category>Productivity:</Category>
+  <Maintainer>patrick-carter</Maintainer>
+  <Support>https://github.com/patrick-carter/gridiron-heads/issues</Support>
+  <Project>https://github.com/patrick-carter/gridiron-heads</Project>
+
+  <!-- Networking: only the host port needs configuration. The container
+       port is locked to 3000 by the image. -->
+  <Networking>
+    <Mode>bridge</Mode>
+    <Ports>
+      <Port>
+        <HostPort>3000</HostPort>
+        <ContainerPort>3000</ContainerPort>
+        <Protocol>tcp</Protocol>
+        <Label>HTTP (Cloudflare Tunnel target)</Label>
+      </Port>
+    </Ports>
+  </Networking>
+
+  <!-- Persistent SQLite DB. Create the Appdata directory once and
+       Unraid will hand it back to the container on every restart. -->
+  <Data>
+    <Volume>
+      <HostDir>/mnt/user/appdata/gridiron-heads/data</HostDir>
+      <ContainerDir>/app/data</ContainerDir>
+      <Mode>rw</Mode>
+      <Description>SQLite session database (persists between restarts)</Description>
+    </Volume>
+  </Data>
+
+  <!-- Environment. Most defaults are fine; override via the form if needed. -->
+  <Config Name="NODE_ENV" Target="NODE_ENV" Default="production" Mode="" Description="Node runtime mode" Type="Variable" Required="False" />
+  <Config Name="PORT" Target="PORT" Default="3000" Mode="" Description="HTTP listen port (must match the mapped HostPort)" Type="Variable" Required="False" />
+  <Config Name="DB_PATH" Target="DB_PATH" Default="/app/data/gridiron.db" Mode="" Description="Absolute path of the SQLite file inside the container" Type="Variable" Required="False" />
+  <Config Name="TZ" Target="TZ" Default="America/Chicago" Mode="" Description="Timezone for log timestamps" Type="Variable" Required="False" />
+
+  <!-- Container hardening -->
+  <Privileged>false</Privileged>
+  <ReadOnly>false</ReadOnly>
+  <NoAutoUpdate>true</NoAutoUpdate>
+  <Restart>unless-stopped</Restart>
+
+  <!-- Healthcheck baked into the image; Unraid surfaces it on the
+       container's "Health" column. -->
+  <HealthCheck>
+    <Type>image</Type>
+  </HealthCheck>
+
+  <!-- WebUI link - points at the container's own / endpoint.
+       If you're going through Cloudflare, swap to https://your-tunnel-host. -->
+  <WebUI>http://[IP]:[PORT:3000]/</WebUI>
+
+  <!-- Image already declares USER gridiron (uid 1001); Unraid respects
+       this. The /app/data volume is writable by that uid/gid. -->
+
+</Container>

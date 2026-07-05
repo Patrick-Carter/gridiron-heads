@@ -18,6 +18,11 @@ export interface CreateAppOpts {
 
 export function createApp(opts: CreateAppOpts = {}): Express {
   const app = express();
+  // Trust the first proxy hop so X-Forwarded-* from Cloudflare Tunnel
+  // (CF-Connecting-IP, X-Forwarded-Proto) is honored. This lets Socket.IO
+  // pick the correct ws:// vs wss:// scheme on the upgrade and keeps
+  // req.protocol/req.ips accurate behind the tunnel.
+  app.set('trust proxy', 1);
   app.use(cors());
   app.use(express.json());
   app.get('/healthz', (_req, res) => res.json({ ok: true }));
@@ -42,6 +47,7 @@ export function createApp(opts: CreateAppOpts = {}): Express {
 
 export interface CreateServerOpts {
   db?: Database;
+  dbPath?: string;
 }
 
 export function createServer(opts: CreateServerOpts = {}): {
@@ -50,12 +56,17 @@ export function createServer(opts: CreateServerOpts = {}): {
   io: IOServer;
   db: Database;
 } {
-  const db = opts.db ?? initDb(path.resolve(process.cwd(), 'server/data/gridiron.db'));
+  const db =
+    opts.db ??
+    initDb(opts.dbPath ?? path.resolve(process.cwd(), 'server/data/gridiron.db'));
   const app = createApp({ db });
   const http_server = http.createServer(app);
   const io = new IOServer(http_server, {
     cors: { origin: '*' },
     serveClient: false,
+    // Force long-polling as fallback so the first connect works even
+    // through a tunnel that doesn't immediately upgrade.
+    transports: ['websocket', 'polling'],
   });
   registerSocketHandlers(io, db);
   return { app, http_server, io, db };

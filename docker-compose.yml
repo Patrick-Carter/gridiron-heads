@@ -1,0 +1,38 @@
+# Reference compose for local testing + as a deployment template.
+#
+# On Unraid the container is typically added via the XML template
+# (unraid-template.xml), not via this file. But Unraid 7 also supports
+# Compose stacks, and this file is what most people will read first.
+#
+# Production on Unraid:
+#   - Image: ghcr.io/<owner>/gridiron-heads:latest (built by .github/workflows)
+#   - Volume: /mnt/user/appdata/gridiron-heads/data -> /app/data
+#   - Port:   3000 -> host (Cloudflare tunnel on the Unraid host hits this)
+#
+# Local dev:
+#   docker compose up --build
+#   open http://localhost:3000
+
+services:
+  app:
+    image: ghcr.io/patrick-carter/gridiron-heads:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gridiron-heads
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DB_PATH: /app/data/gridiron.db
+    volumes:
+      # Persistent SQLite sessions — change the left side for your host.
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
