@@ -92,6 +92,7 @@ export default function Game({
             <Field
               playResult={lastPlayResult}
               ballYardline={game.ball_yardline}
+              offenseDirection={game.possession_idx === 0 ? 1 : -1}
               isAnimating={isAnimating}
               onAnimationDone={handleAnimationDone}
             />
@@ -102,7 +103,10 @@ export default function Game({
               <span className="chip !bg-sun !text-ink">
                 {game.down === 1 ? '1st' : game.down === 2 ? '2nd' : game.down === 3 ? '3rd' : '4th'}
               </span>{' '}
-              &amp; {game.distance} @ {game.ball_yardline}
+              &amp; {game.distance}
+              {game.distance >= 10 && game.ball_yardline >= 10 && game.ball_yardline <= 90
+                ? ` at the ${game.ball_yardline}`
+                : ''}
             </span>
             <span className="text-xs font-bold">
               <span className={isOffense ? 'chip !bg-lime' : 'chip !bg-maroon !text-cream'}>
