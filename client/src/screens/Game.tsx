@@ -4,9 +4,9 @@ import Field from '../components/Field.js';
 import SchemePicker from '../components/SchemePicker.js';
 import AudiblePanel from '../components/AudiblePanel.js';
 import ScorePanel from '../components/ScorePanel.js';
-import PlayLog from '../components/PlayLog.js';
+
 import RosterModal from '../components/RosterModal.js';
-import RollReveal from '../components/RollReveal.js';
+import ResultsPanel from '../components/ResultsPanel.js';
 import ReplayScrubber from '../components/ReplayScrubber.js';
 import TdConfetti from '../components/TdConfetti.js';
 import {
@@ -180,11 +180,13 @@ export default function Game({
             />
           </div>
 
-          {/* Phase 4: skill-roll reveal HUD below the field. Visible always
-              (recap mode when no animation, sync mode during animation). */}
-          <RollReveal
+          {/* Phase 4: results panel below the field. Top section shows the
+              current play's matchup rectangles + result (animated). Bottom
+              section is a scrollable list of the prior plays. */}
+          <ResultsPanel
             playResult={lastPlayResult}
             progress={isAnimating ? animProgress : null}
+            history={game.history || []}
           />
 
           {/* Phase 6: replay scrubber — frame-step the last play. */}
@@ -303,8 +305,7 @@ export default function Game({
             </div>
           )}
 
-          <PlayLog history={game.history || []} />
-        </div>
+          </div>
       </div>
 
       {/* Roster overlay — D031: click a player name to inspect their team's
