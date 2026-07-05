@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Home from './screens/Home.js';
+import Tutorial from './screens/Tutorial.js';
 import Create from './screens/Create.js';
 import Join from './screens/Join.js';
 import SessionRouter from './screens/SessionRouter.js';
@@ -9,6 +10,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/tutorial" element={<Tutorial />} />
         <Route path="/create" element={<Create />} />
         <Route path="/join" element={<Join />} />
         <Route path="/join/:sessionId" element={<Join />} />

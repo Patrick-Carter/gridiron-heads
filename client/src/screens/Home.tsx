@@ -38,6 +38,12 @@ export default function Home() {
           >
             Join Game →
           </Link>
+          <Link
+            to="/tutorial"
+            className="btn-flash btn-grape w-full text-center"
+          >
+            📖 How to Play
+          </Link>
         </div>
 
         <div className="text-center text-xs text-ink/70 pt-1">
