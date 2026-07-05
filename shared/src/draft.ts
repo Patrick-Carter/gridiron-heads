@@ -3,6 +3,7 @@ import type {
   PositionGroup,
   PositionOption,
   QBOption,
+  TeamState,
 } from './types.js';
 import { drawQBs } from './qb_pool.js';
 
@@ -57,6 +58,20 @@ export const PICK_ORDER: PositionGroup[] = [
 export const PICKS_PER_TEAM = PICK_ORDER.length; // 6
 export const TOTAL_PICKS = PICKS_PER_TEAM * 2; // 12
 
+/** How many picks have been made across both teams? */
+export function totalPicksDone(draft: { picks: Record<string, TeamState> }): number {
+  let n = 0;
+  for (const team of Object.values(draft.picks)) {
+    if (team.qb) n++;
+    if (team.d_line) n++;
+    if (team.o_line) n++;
+    if (team.off_skill) n++;
+    if (team.def_skill) n++;
+    if (team.kicker) n++;
+  }
+  return n;
+}
+
 /** Remove a picked option from the pool (mutates). */
 export function takeFromPool(
   pool: DraftPool,
@@ -68,4 +83,18 @@ export function takeFromPool(
   if (idx === -1) return null;
   const [taken] = arr.splice(idx, 1);
   return taken;
+}
+
+/** Groups a player has NOT yet picked. */
+export function remainingGroups(
+  team: TeamState,
+): PositionGroup[] {
+  const out: PositionGroup[] = [];
+  if (!team.qb) out.push('QB');
+  if (!team.d_line) out.push('D_LINE');
+  if (!team.o_line) out.push('O_LINE');
+  if (!team.off_skill) out.push('OFF_SKILL');
+  if (!team.def_skill) out.push('DEF_SKILL');
+  if (!team.kicker) out.push('KICKER');
+  return out;
 }

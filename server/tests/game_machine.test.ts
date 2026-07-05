@@ -75,44 +75,57 @@ describe('Draft flow', () => {
     flipCoin(room);
     startDraft(room);
   });
-  it('initializes pool + order + empty teams', () => {
-    expect(room.draft).toBeTruthy();
-    expect(room.draft!.pool.QB).toHaveLength(3);
-    expect(room.draft!.order).toHaveLength(12);
-    expect(room.draft!.picks[room.first_possession_id!]).toBeDefined();
+  it('initializes pool + pick_order + empty teams', () => {
+    expect(room.draft!.pick_order).toHaveLength(12);
+    expect(room.draft!.current_turn).toBe(0);
   });
-  it('alternating picks work', () => {
+  it('alternating picks: each player picks any unpicked group on their turn', () => {
     const first = room.first_possession_id!;
     const second = room.players.find((p) => p.id !== first)!.id;
-    // First picks QB option 0
-    const qbOpt = room.draft!.pool.QB[0];
-    const r = draftPick(room, first, 'QB', qbOpt.id);
-    expect(r.ok).toBe(true);
-    expect(room.draft!.picks[first].qb).toBeTruthy();
-    expect(room.draft!.pool.QB).toHaveLength(2);
-    // Second picks D_LINE
-    const dlOpts = room.draft!.pool.D_LINE;
-    const r2 = draftPick(room, second, 'D_LINE', dlOpts[0].id);
+    // First picker picks D_LINE (not QB — proving group is free)
+    const r1 = draftPick(room, first, 'D_LINE', room.draft!.pool.D_LINE[0].id);
+    expect(r1.ok).toBe(true);
+    expect(room.draft!.current_turn).toBe(1);
+    // Second picker picks QB
+    const r2 = draftPick(room, second, 'QB', room.draft!.pool.QB[0].id);
     expect(r2.ok).toBe(true);
-    expect(room.draft!.turn).toBe(2);
+    expect(room.draft!.current_turn).toBe(2);
   });
-  it('rejects wrong turn', () => {
+  it('rejects pick when not your turn', () => {
     const first = room.first_possession_id!;
     const second = room.players.find((p) => p.id !== first)!.id;
     const r = draftPick(room, second, 'QB', room.draft!.pool.QB[0].id);
     expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('not_your_turn');
+  });
+  it('rejects picking the same group twice', () => {
+    const first = room.first_possession_id!;
+    const second = room.players.find((p) => p.id !== first)!.id;
+    // First player takes QB
+    draftPick(room, first, 'QB', room.draft!.pool.QB[0].id);
+    // Second player takes something else
+    draftPick(room, second, 'D_LINE', room.draft!.pool.D_LINE[0].id);
+    // Now first player's turn again — try QB again (should fail: group_already_picked)
+    const r = draftPick(room, first, 'QB', room.draft!.pool.QB[0].id);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('group_already_picked');
   });
   it('full draft → 12 picks → startGame', () => {
-    const order = room.draft!.order;
+    const order = room.draft!.pick_order;
+    // Each player picks from their remaining groups in pool order.
     for (let i = 0; i < 12; i++) {
       const player = order[i];
-      const group = ['QB', 'D_LINE', 'O_LINE', 'OFF_SKILL', 'DEF_SKILL', 'KICKER'][i % 6];
-      const pool = (room.draft!.pool as any)[group];
-      if (pool.length === 0) continue; // shouldn't happen in normal flow
-      const r = draftPick(room, player, group as any, pool[0].id);
+      const team = room.draft!.picks[player];
+      const pickFrom = ['QB', 'D_LINE', 'O_LINE', 'OFF_SKILL', 'DEF_SKILL', 'KICKER'].find((g) => {
+        const slot = (team as any)[g.toLowerCase()];
+        return slot == null;
+      });
+      if (!pickFrom) throw new Error(`no unpicked group for ${player} at pick ${i}`);
+      const pool = (room.draft!.pool as any)[pickFrom];
+      const r = draftPick(room, player, pickFrom as any, pool[0].id);
       expect(r.ok).toBe(true);
     }
-    expect(room.draft!.turn).toBe(12);
+    expect(room.draft!.current_turn).toBe(12);
     const game = startGame(room);
     expect(game).toBeTruthy();
     expect(game.phase).toBe('between_plays');
@@ -209,7 +222,7 @@ function setupReadyToSnapRoom(): RoomState {
   flipCoin(room);
   startDraft(room);
   // Manually fill draft to skip 12 picks
-  const order = room.draft!.order;
+  const order = room.draft!.pick_order;
   for (let i = 0; i < 12; i++) {
     const player = order[i];
     const group = ['QB', 'D_LINE', 'O_LINE', 'OFF_SKILL', 'DEF_SKILL', 'KICKER'][i % 6];

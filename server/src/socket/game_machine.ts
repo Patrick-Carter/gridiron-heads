@@ -5,7 +5,6 @@ import {
   newGameState,
   generateDraft,
   takeFromPool,
-  PICK_ORDER,
   TOTAL_PICKS,
   advanceAfterPlay,
   resolvePlay,
@@ -108,23 +107,23 @@ export function flipCoin(room: RoomState): 'heads' | 'tails' {
   return result;
 }
 
-/** Start the draft with a freshly generated pool. */
+/** Start the draft with a freshly generated pool. Alternating picks: first_possession
+ *  picks 1, 3, 5, ...; other player picks 2, 4, 6, ... On each pick, the picker
+ *  may choose any group they haven't yet picked. */
 export function startDraft(room: RoomState): void {
   const rng = mulberry32(room.draft_seed);
   const pool = generateDraft(rng);
-  // Pick order: first_possession_id first, then other, alternating.
-  // Total 12 picks. turn 0 → first_possession_id.
-  const order: string[] = [];
   const first = room.first_possession_id!;
   const second = room.players.find((p) => p.id !== first)!.id;
+  const pick_order: string[] = [];
   for (let i = 0; i < TOTAL_PICKS; i++) {
-    order.push(i % 2 === 0 ? first : second);
+    pick_order.push(i % 2 === 0 ? first : second);
   }
   room.draft = {
-    turn: 0,
     picks: { [first]: emptyTeam(), [second]: emptyTeam() },
     pool: pool as any,
-    order,
+    pick_order,
+    current_turn: 0,
     first_possession_id: first,
   };
 }
@@ -140,27 +139,38 @@ export function emptyTeam(): TeamState {
   };
 }
 
-/** Pick from the draft pool. Returns the picked option or error. */
+/** Alternating-turn draft pick. Picker is whoever's turn it is; they may pick ANY
+ *  group they haven't already taken. */
 export function draftPick(
   room: RoomState,
   player_id: string,
   group: PositionGroup,
   option_id: string,
-): { ok: true; picked: PositionOption | QBOption; turn: number } | { ok: false; reason: string } {
+): { ok: true; picked: PositionOption | QBOption } | { ok: false; reason: string } {
   if (!room.draft) return { ok: false, reason: 'no_draft' };
-  if (room.draft.turn >= TOTAL_PICKS) return { ok: false, reason: 'draft_done' };
-  const expectedPicker = room.draft.order[room.draft.turn];
+  if (room.draft.current_turn >= TOTAL_PICKS) return { ok: false, reason: 'draft_done' };
+  const expectedPicker = room.draft.pick_order[room.draft.current_turn];
   if (expectedPicker !== player_id) return { ok: false, reason: 'not_your_turn' };
-  const expectedGroup = PICK_ORDER[room.draft.turn % PICK_ORDER.length];
-  if (expectedGroup !== group) return { ok: false, reason: 'wrong_group' };
+  const team = room.draft.picks[player_id];
+  if (!team) return { ok: false, reason: 'unknown_player' };
+  if (groupAlreadyPicked(team, group)) return { ok: false, reason: 'group_already_picked' };
   const taken = takeFromPool(room.draft.pool, group, option_id);
   if (!taken) return { ok: false, reason: 'option_not_in_pool' };
 
-  const team = room.draft.picks[player_id];
   assignToTeam(team, group, taken as PositionOption & QBOption);
+  room.draft.current_turn++;
+  return { ok: true, picked: taken as PositionOption | QBOption };
+}
 
-  room.draft.turn++;
-  return { ok: true, picked: taken as PositionOption | QBOption, turn: room.draft.turn };
+function groupAlreadyPicked(team: TeamState, group: PositionGroup): boolean {
+  switch (group) {
+    case 'QB': return team.qb !== null;
+    case 'D_LINE': return team.d_line !== null;
+    case 'O_LINE': return team.o_line !== null;
+    case 'OFF_SKILL': return team.off_skill !== null;
+    case 'DEF_SKILL': return team.def_skill !== null;
+    case 'KICKER': return team.kicker !== null;
+  }
 }
 
 export function assignToTeam(
@@ -473,12 +483,14 @@ export function snapshot(room: RoomState): any {
     coin_result: room.coin_result,
     first_possession_id: room.first_possession_id,
     draft: room.draft && {
-      turn: room.draft.turn,
-      total: TOTAL_PICKS,
-      order: room.draft.order,
-      pool: room.draft.pool,
       picks: room.draft.picks,
+      pool: room.draft.pool,
       first_possession_id: room.draft.first_possession_id,
+      pick_order: room.draft.pick_order,
+      current_turn: room.draft.current_turn,
+      current_picker_id: room.draft.pick_order[room.draft.current_turn] ?? null,
+      total: TOTAL_PICKS,
+      done: room.draft.current_turn,
     },
     game: room.game,
     pending_schemes: room.pending_schemes,

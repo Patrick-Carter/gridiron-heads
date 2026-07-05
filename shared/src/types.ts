@@ -56,10 +56,11 @@ export interface DraftPoolEntry {
 }
 
 export interface DraftState {
-  turn: number; // 0..11
   picks: Record<string, TeamState>; // player_id -> TeamState
   pool: Record<PositionGroup, (PositionOption | QBOption)[]>;
-  order: string[]; // player_ids in pick order (first_possession first per Q1)
+  /** Player IDs in alternating pick order (length = TOTAL_PICKS). Index = turn# */
+  pick_order: string[];
+  current_turn: number; // 0..TOTAL_PICKS-1
   first_possession_id: string;
 }
 

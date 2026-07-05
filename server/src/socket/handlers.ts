@@ -105,7 +105,7 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
         return;
       }
       io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
-      if (room.draft.turn === TOTAL_PICKS) {
+      if (room.draft.current_turn >= TOTAL_PICKS) {
         const game = startGame(room);
         game.phase = 'awaiting_schemes';
         io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));

@@ -117,13 +117,19 @@ describe('2-player end-to-end flow', () => {
     host.on('session:state', (s) => updateLatest(hostPlayerId, s));
     guest.on('session:state', (s) => updateLatest(guestPlayerId, s));
     const gameDonePromise = waitFor(host, 'session:state', (s) => s && s.game);
-    const order = draftState.draft.order;
-    const pickOrder = ['QB', 'D_LINE', 'O_LINE', 'OFF_SKILL', 'DEF_SKILL', 'KICKER'];
+    const order = draftState.draft.pick_order;
+    const groups = ['QB', 'D_LINE', 'O_LINE', 'OFF_SKILL', 'DEF_SKILL', 'KICKER'];
     for (let i = 0; i < 12; i++) {
       const playerId = order[i];
       const sock = playerId === hostPlayerId ? host : guest;
-      const group = pickOrder[i % 6];
-      const pool = playerLatest[playerId]?.draft?.pool;
+      const latest = playerLatest[playerId];
+      const team = latest?.draft?.picks?.[playerId];
+      // Find first unpicked group
+      const group = groups.find((g) => {
+        return (team as any)?.[g.toLowerCase()] == null;
+      });
+      if (!group) throw new Error(`no unpicked group for ${playerId} at pick ${i}`);
+      const pool = latest?.draft?.pool;
       const opt = pool?.[group]?.[0];
       if (!opt) throw new Error(`no ${group} option available for ${playerId} at pick ${i}`);
       sock.emit('draft:pick', { group, option_id: opt.id });
