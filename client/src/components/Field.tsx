@@ -130,12 +130,15 @@ export default function Field({
   }, [playResult, isAnimating, ballYardline]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={FIELD_W}
-      height={FIELD_H}
-      className="w-full bg-emerald-900 rounded border border-border"
-    />
+    <div className="w-full" style={{ aspectRatio: `${FIELD_W} / ${FIELD_H}` }}>
+      <canvas
+        ref={canvasRef}
+        width={FIELD_W}
+        height={FIELD_H}
+        className="block w-full h-full"
+        style={{ imageRendering: 'pixelated' }}
+      />
+    </div>
   );
 }
 

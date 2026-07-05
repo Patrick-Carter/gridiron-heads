@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { joinSession } from '../api/http.js';
+import FlashHeader from '../components/FlashHeader.js';
 
 export default function Join() {
   const params = useParams();
@@ -25,36 +26,44 @@ export default function Join() {
   }
 
   return (
-    <div className="min-h-full flex items-center justify-center p-8">
-      <form onSubmit={handleSubmit} className="max-w-md w-full space-y-4">
-        <h2 className="text-2xl font-bold text-accent">Join Game</h2>
+    <div className="min-h-full flex flex-col items-center justify-center p-4 md:p-8 relative">
+      <FlashHeader title="JOIN GAME" kicker="Step 1 of 3" star="🤝" />
+      <form
+        onSubmit={handleSubmit}
+        className="panel-flash max-w-md w-full space-y-4"
+      >
+        <div className="panel-titlebar">
+          <span>Got an invite?</span>
+          <span className="text-xs">Required</span>
+        </div>
         <label className="block">
-          <span className="text-fg/80 text-sm">Session ID</span>
+          <span className="block text-sm font-bold mb-1">Session ID</span>
           <input
             type="text"
             value={sessionId}
             onChange={(e) => setSessionId(e.target.value)}
-            className="mt-1 block w-full bg-panel border border-border rounded px-3 py-2 text-fg focus:outline-none focus:border-accent"
-            maxLength={24}
+            className="input-flash"
+            placeholder="abc123xyz"
             autoFocus
           />
         </label>
         <label className="block">
-          <span className="text-fg/80 text-sm">Display name</span>
+          <span className="block text-sm font-bold mb-1">Display name</span>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="mt-1 block w-full bg-panel border border-border rounded px-3 py-2 text-fg focus:outline-none focus:border-accent"
+            className="input-flash"
             maxLength={24}
+            placeholder="e.g. Penalty Flag"
           />
         </label>
         <button
           type="submit"
           disabled={busy || !sessionId.trim() || !name.trim()}
-          className="w-full bg-accent text-bg font-bold py-3 rounded hover:opacity-90 disabled:opacity-50"
+          className="btn-flash btn-xtra btn-cool w-full"
         >
-          {busy ? 'Joining…' : 'Join'}
+          {busy ? 'Joining…' : 'Suit Up! →'}
         </button>
       </form>
     </div>

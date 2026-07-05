@@ -27,24 +27,29 @@ export default function SchemePicker({
   }
 
   return (
-    <div className="bg-panel border border-border rounded p-4 space-y-3">
-      <h3 className="font-bold text-accent">Pick Your Play</h3>
+    <div className="panel-flash space-y-3">
+      <div className="panel-titlebar !mt-0">
+        <span>Pick Your Play!</span>
+        <span className="text-xs">Simul-reveal</span>
+      </div>
+
       <div className="grid grid-cols-4 gap-2">
         {(['run', 'pass', 'punt', 'fg'] as PlayParent[]).map((p) => (
           <button
             key={p}
             disabled={disabled}
             onClick={() => selectParent(p)}
-            className={`py-2 rounded font-bold ${
+            className={`btn-flash !min-h-0 py-2 text-sm ${
               parent === p
-                ? 'bg-accent text-bg'
-                : 'bg-bg border border-border text-fg hover:border-accent'
+                ? p === 'fg' || p === 'punt' ? 'btn-danger' : 'btn-primary'
+                : 'btn-ghost'
             } ${disabled ? 'opacity-50' : ''}`}
           >
             {p.toUpperCase()}
           </button>
         ))}
       </div>
+
       {needsSub && (
         <div className="grid grid-cols-2 gap-2">
           {subs.map((s) => (
@@ -52,10 +57,8 @@ export default function SchemePicker({
               key={s}
               disabled={disabled}
               onClick={() => setSub(s)}
-              className={`py-2 rounded ${
-                sub === s
-                  ? 'bg-accent text-bg font-bold'
-                  : 'bg-bg border border-border text-fg hover:border-accent'
+              className={`btn-flash !min-h-0 py-2 text-sm ${
+                sub === s ? 'btn-cool' : 'btn-ghost'
               } ${disabled ? 'opacity-50' : ''}`}
             >
               {s.toUpperCase()}
@@ -63,12 +66,13 @@ export default function SchemePicker({
           ))}
         </div>
       )}
+
       <button
         disabled={disabled}
         onClick={() => onPick(parent, sub)}
-        className="w-full bg-ok text-bg font-bold py-3 rounded hover:opacity-90 disabled:opacity-50"
+        className="btn-flash btn-xtra btn-go w-full"
       >
-        Lock In
+        🔒 Lock In!
       </button>
     </div>
   );

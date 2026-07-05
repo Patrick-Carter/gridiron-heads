@@ -6,7 +6,7 @@ import AudiblePanel from '../components/AudiblePanel.js';
 import ScorePanel from '../components/ScorePanel.js';
 import PlayLog from '../components/PlayLog.js';
 import type { SessionSnapshot } from '../hooks/useSession.js';
-import type { Play, PlayParent, PlaySub } from '@gridiron/shared';
+import type { Play } from '@gridiron/shared';
 
 export default function Game({
   state,
@@ -51,35 +51,46 @@ export default function Game({
   const pendingMyScheme = state.pending_schemes?.[meId];
 
   return (
-    <div className="min-h-full p-4 max-w-6xl mx-auto">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div className="min-h-full p-3 md:p-4 max-w-6xl mx-auto">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
         {/* Left: Field + Score */}
         <div className="lg:col-span-2 space-y-3">
           <ScorePanel scores={game.scores} myIdx={myIdx} players={players} />
-          <Field
-            playResult={lastPlayResult}
-            ballYardline={game.ball_yardline}
-            isAnimating={isAnimating}
-            onAnimationDone={handleAnimationDone}
-          />
-          <div className="bg-panel border border-border rounded p-3 text-sm flex items-center justify-between">
-            <div>
-              {game.down === 1 ? '1st' : game.down === 2 ? '2nd' : game.down === 3 ? '3rd' : '4th'} & {game.distance} at {game.ball_yardline}
-            </div>
-            <div className="text-fg/60">
-              Phase: {game.phase} · {isOffense ? 'OFFENSE' : 'DEFENSE'}
-            </div>
+
+          <div className="field-frame">
+            <Field
+              playResult={lastPlayResult}
+              ballYardline={game.ball_yardline}
+              isAnimating={isAnimating}
+              onAnimationDone={handleAnimationDone}
+            />
+          </div>
+
+          <div className="panel-flash flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span className="font-bold">
+              <span className="chip !bg-sun !text-ink">
+                {game.down === 1 ? '1st' : game.down === 2 ? '2nd' : game.down === 3 ? '3rd' : '4th'}
+              </span>{' '}
+              &amp; {game.distance} @ {game.ball_yardline}
+            </span>
+            <span className="text-xs font-bold">
+              <span className={isOffense ? 'chip !bg-lime' : 'chip !bg-maroon !text-cream'}>
+                {isOffense ? 'OFFENSE 🏈' : 'DEFENSE 🛡️'}
+              </span>
+            </span>
             {canReplay && !isAnimating && (
               <button
                 onClick={handleReplay}
-                className="text-xs px-2 py-1 border border-border rounded hover:bg-bg"
+                className="btn-flash btn-cool text-sm"
               >
-                Replay last play
+                ↻ Replay
               </button>
             )}
           </div>
+
           {lastPlayResult && !isAnimating && (
-            <div className="bg-panel border border-border rounded p-3 text-sm">
+            <div className="panel-flash text-base font-bold text-center">
+              <span className="sticker mr-2">PLAY!</span>
               {lastPlayResult.text_recap}
             </div>
           )}
@@ -93,26 +104,32 @@ export default function Game({
             />
           )}
           {game.phase === 'awaiting_schemes' && pendingMyScheme && (
-            <div className="bg-panel border border-border rounded p-4 text-center text-fg/60">
-              Locked in: <span className="text-accent font-bold">{pendingMyScheme.parent} {pendingMyScheme.sub}</span>
-              <div className="text-xs mt-2">Waiting for opponent…</div>
+            <div className="panel-flash text-center space-y-2">
+              <div className="panel-titlebar !mt-0"><span>Locked In!</span><span className="text-xs">Waiting…</span></div>
+              <div className="text-xl font-bold">
+                <span className="chip">{pendingMyScheme.parent}</span>{' '}
+                <span className="chip">{pendingMyScheme.sub}</span>
+              </div>
+              <div className="text-sm text-ink/70">Waiting for opponent…</div>
             </div>
           )}
+
           {game.phase === 'ready_to_snap' && isOffense && (
             <div className="space-y-3">
               {opponentScheme && (
-                <div className="bg-err/10 border border-err/40 rounded p-3">
-                  <div className="text-xs text-fg/60">Defense called:</div>
-                  <div className="text-err font-bold">
+                <div className="panel-flash text-center"
+                     style={{ background: '#c8102e', color: '#fff8dc' }}>
+                  <div className="text-xs uppercase font-bold mb-1">Defense called:</div>
+                  <div className="text-xl font-bold">
                     {opponentScheme.parent.toUpperCase()} {opponentScheme.sub.toUpperCase()}
                   </div>
                 </div>
               )}
               <button
                 onClick={() => send(EVENTS.SNAP)}
-                className="w-full bg-ok text-bg font-bold py-3 rounded hover:opacity-90"
+                className="btn-flash btn-xtra btn-go w-full"
               >
-                SNAP
+                ⚡ SNAP! ⚡
               </button>
               <AudiblePanel
                 role="offense"
@@ -125,11 +142,13 @@ export default function Game({
               />
             </div>
           )}
+
           {game.phase === 'ready_to_snap' && !isOffense && (
-            <div className="bg-panel border border-border rounded p-4 text-center text-fg/60">
-              Offense snapping…
+            <div className="panel-flash text-center animate-pulse">
+              <div className="text-xl">🏈 Offense snapping…</div>
             </div>
           )}
+
           {game.phase === 'awaiting_def_response' && !isOffense && (
             <AudiblePanel
               role="defense"
@@ -139,11 +158,13 @@ export default function Game({
               onDefStay={() => send(EVENTS.DEF_STAY)}
             />
           )}
+
           {game.phase === 'awaiting_def_response' && isOffense && (
-            <div className="bg-panel border border-border rounded p-4 text-center text-fg/60">
-              Waiting for defense…
+            <div className="panel-flash text-center animate-pulse">
+              <div className="text-xl">🕒 Waiting for defense…</div>
             </div>
           )}
+
           {(game.phase === 'between_plays' || game.phase === 'play_anim') && (
             <button
               onClick={() => {
@@ -151,17 +172,22 @@ export default function Game({
                 setCanReplay(false);
                 send(EVENTS.NEXT_PLAY);
               }}
-              className="w-full bg-panel border border-accent text-accent font-bold py-3 rounded hover:bg-accent hover:text-bg"
+              className="btn-flash btn-primary w-full"
             >
-              Skip wait
+              ⏭ Skip Wait
             </button>
           )}
           {game.phase === 'play_anim' && (
-            <div className="text-center text-fg/40 text-xs">Next play loading…</div>
+            <div className="text-center text-xs text-cream/80 animate-pulse">
+              📺 Play animating…
+            </div>
           )}
           {game.phase === 'between_plays' && (
-            <div className="text-center text-fg/40 text-xs">Next play in 2.5s…</div>
+            <div className="text-center text-xs text-cream/80">
+              ⏱ Next play in ~2.5s
+            </div>
           )}
+
           <PlayLog history={game.history || []} myIdx={myIdx} />
         </div>
       </div>

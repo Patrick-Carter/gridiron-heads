@@ -249,9 +249,17 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       if (game.phase !== 'ready_to_snap') return;
       const seed = Math.floor(Math.random() * 2 ** 32);
       const { result } = resolveCurrentPlay(room, seed);
-      game.phase = 'play_anim';
+      // If the play ended the game (win condition met), don't clobber the 'ended'
+      // phase with 'play_anim' — broadcast the terminal state so both clients
+      // render GameOver. Previously this handler forced phase → 'play_anim' even
+      // when the game had just been decided, masking wins as zombie plays.
+      // `resolveCurrentPlay` widens game.phase to 'between_plays' | 'ended' (the
+      // latter when the win condition is met), so cast through any to compare.
+      const gameEnded = (game.phase as string) === 'ended';
+      if (!gameEnded) game.phase = 'play_anim';
       io.to(`session:${sdata.session_id}`).emit('play:result', { result });
       io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
+      if (gameEnded) return; // skip auto-advance — game is over, broadcast is final
       // Auto-flow: play_anim → between_plays → awaiting_schemes without requiring
       // any client to click "Next Play". The defense doesn't need to manually advance.
       const sid = sdata.session_id;

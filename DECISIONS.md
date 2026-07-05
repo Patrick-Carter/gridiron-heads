@@ -133,8 +133,45 @@ first or every scoring play will also flash "TURNOVER!".
 session create/join. SessionRouter reads both. useSession passes display_name in the
 session:join socket event. Server updates room.players[].name on hydration.
 
-## Open assumptions (flagged for future review)
+## D024 — 2026-07-04 — Snap handler must not clobber 'ended' phase (ACCEPTED)
+**Decision:** In the `game:snap` socket handler, after `resolveCurrentPlay`,
+only set `game.phase = 'play_anim'` when the game hasn't just ended. If
+`resolveCurrentPlay` transitioned phase to `'ended'` (win condition met),
+skip the phase overwrite AND skip the auto-advance `setTimeout` chain.
+**Rationale:** Without this guard, every winning play had its `'ended'`
+phase silently overwritten back to `'play_anim'`, hiding the win. Both
+clients saw a normal animation continue and never rendered `GameOver`.
+The bug was masked by the fact that the auto-advance chain kept the game
+flowing for one more cycle, scoring another play, etc. — so the win
+condition effectively triggered a zombie game. Fixed with a single
+`(game.phase as string) === 'ended'` guard.
+**Regression test:** `server/tests/e2e.test.ts` → "does NOT clobber ended
+phase after a winning play" drives enough snap cycles to potentially end
+the game and asserts no broadcast ever violates the win rule (phase
+STAYS `'ended'` whenever leader ≥ 3 AND diff ≥ 2).
 
+## D025 — 2026-07-04 — Early-2000s Flash game aesthetic (ACCEPTED)
+**Decision:** Theme overhaul. Saturated primary colors (yellow / red /
+hi-vis green / electric blue / grape), thick black borders, chunky 4-6px
+hard drop shadows, Comic Sans / Trebuchet / pixel fonts, and a starfield
+on a deep purple backdrop. Mobile-first: 320px-friendly widths, touch-
+target ≥ 48px, stack layouts on small screens, canvas uses
+`aspect-ratio` to scale fluidly while keeping pixelated rendering.
+**Rationale:** User request: "early 2000s flashgame fun type site".
+The original dark/grey Tailwind panels (bg-panel, border-border) traded
+character for restraint — replaced with `.panel-flash`, `.btn-flash`,
+`.flash-banner` chunky components. Custom CSS in `globals.css` provides
+chunky bevel state (`btn-flash:active` lifts by translating shadow),
+rotated/wobbling star stickers (`.sticker`, `animate-wobble`), and an
+animated radial-gradient starfield body backdrop with a `::before`
+twinkling layer.
+**Plus:** Body font + panel sizing now adapt at the 480px breakpoint
+(`@media (max-width: 480px)` — reduces shadow size + bumps button
+min-height to 52px for fat-finger safety). Field canvas dropped the
+fixed height + `rounded` border in favor of `aspect-ratio` 2:1 + a
+`.field-frame` parent that hosts the chunky border.
+
+## Open assumptions (flagged for future review)
 | # | Assumption |
 |---|---|
 | A1 | Tie in skill roll = 0 yards, no turnover. |

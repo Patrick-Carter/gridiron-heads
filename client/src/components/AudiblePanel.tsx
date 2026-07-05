@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { EVENTS } from '../api/socket.js';
-import type { Play, PlaySub, SUB_OPTIONS_BY_PARENT } from '@gridiron/shared';
+import type { Play, PlaySub } from '@gridiron/shared';
 import { flipSubtype } from '@gridiron/shared';
 
 export default function AudiblePanel({
@@ -30,23 +29,26 @@ export default function AudiblePanel({
     const realLeft = (audiblesUsed ?? 0) === 0;
     const fakeLeft = (fakeAudiblesUsed ?? 0) === 0;
     return (
-      <div className="bg-panel border border-border rounded p-4 space-y-2">
-        <h3 className="font-bold text-accent">Audibles (offense)</h3>
+      <div className="panel-flash space-y-2">
+        <div className="panel-titlebar !mt-0">
+          <span>Audibles (offense)</span>
+          <span className="text-xs">Tactical!</span>
+        </div>
         {!showPicker && (
           <div className="grid grid-cols-2 gap-2">
             <button
               disabled={!realLeft}
               onClick={() => setShowPicker(true)}
-              className="bg-warn text-bg font-bold py-2 rounded disabled:opacity-30"
+              className={`btn-flash ${realLeft ? 'btn-danger' : '!bg-cream/40 !text-ink/40'}`}
             >
-              Audible{!realLeft && ' (used)'}
+              🗣 Audible{!realLeft && ' (used)'}
             </button>
             <button
               disabled={!fakeLeft}
               onClick={onFakeAudible}
-              className="bg-bg border border-warn text-warn font-bold py-2 rounded disabled:opacity-30"
+              className={`btn-flash ${fakeLeft ? 'btn-cool' : '!bg-cream/40 !text-ink/40'}`}
             >
-              Fake Audible{!fakeLeft && ' (used)'}
+              🎭 Fake{!fakeLeft && ' (used)'}
             </button>
           </div>
         )}
@@ -65,14 +67,17 @@ export default function AudiblePanel({
 
   if (role === 'defense' && phase === 'awaiting_def_response') {
     return (
-      <div className="bg-panel border border-border rounded p-4 space-y-2">
-        <h3 className="font-bold text-accent">Offense audibled — respond?</h3>
+      <div className="panel-flash space-y-3">
+        <div className="panel-titlebar !mt-0">
+          <span>Offense audibled!</span>
+          <span className="text-xs">React!</span>
+        </div>
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={onDefStay}
-            className="bg-bg border border-border text-fg font-bold py-2 rounded hover:border-accent"
+            className="btn-flash btn-ghost"
           >
-            Stay
+            🛡 Stay
           </button>
           {currentPlay && (
             <AudibleSubPicker
@@ -102,9 +107,9 @@ function AudibleSubPicker({
   return (
     <button
       onClick={() => onPick(flipped)}
-      className="bg-warn text-bg font-bold py-2 rounded hover:opacity-90"
+      className="btn-flash btn-danger w-full"
     >
-      {label}: flip to {flipped.toUpperCase()}
+      ↻ {label}: → {flipped.toUpperCase()}
     </button>
   );
 }

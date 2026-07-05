@@ -2,6 +2,7 @@ import { EVENTS } from '../api/socket.js';
 import { PICK_ORDER } from '@gridiron/shared';
 import type { SessionSnapshot } from '../hooks/useSession.js';
 import { modifierDescription } from '@gridiron/shared';
+import FlashHeader from '../components/FlashHeader.js';
 
 export default function Draft({
   state,
@@ -38,16 +39,26 @@ export default function Draft({
   const oppPicked = pickedGroups(oppTeam);
 
   return (
-    <div className="min-h-full p-6">
+    <div className="min-h-full p-4 md:p-6 relative">
+      <FlashHeader title="THE DRAFT" kicker={`Pick ${draft.current_turn + 1} of ${draft.total}`} star="🏈" />
+
       <div className="max-w-6xl mx-auto space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-accent">Draft</h2>
-          <div className={`text-lg font-bold ${myTurn ? 'text-ok' : 'text-warn'}`}>
-            {myTurn ? 'YOUR TURN' : `${currentPickerName}'s turn`}
+        {/* Turn banner */}
+        <div className={`panel-flash text-center ${myTurn ? 'animate-shout' : ''}`}>
+          <div className="panel-titlebar !mt-0">
+            <span>{myTurn ? 'YOUR MOVE' : `${currentPickerName.toUpperCase()}'S MOVE`}</span>
+            <span className="text-xs">{draft.current_turn + 1}/{draft.total}</span>
+          </div>
+          <div className="text-base md:text-lg font-bold">
+            {myTurn ? (
+              <span className="chip !bg-lime">PICK ANY GROUP BELOW!</span>
+            ) : (
+              <span>Hang tight — they're deciding…</span>
+            )}
           </div>
         </div>
 
-        {/* Pick order bar — shows which pick of 12 we're on */}
+        {/* Pick order bar */}
         <div className="flex gap-1 text-xs">
           {draft.pick_order.map((pid: string, i: number) => {
             const isMine = pid === meId;
@@ -56,17 +67,18 @@ export default function Draft({
             return (
               <div
                 key={i}
-                className={`flex-1 text-center py-1 rounded ${
+                className={`flex-1 text-center py-1 border-2 ${
                   isCurrent
-                    ? 'bg-accent text-bg font-bold'
+                    ? 'bg-sun text-ink font-bold animate-pulse'
                     : isDone
                     ? isMine
-                      ? 'bg-ok/30 text-ok'
-                      : 'bg-err/30 text-err'
+                      ? 'bg-lime text-ink'
+                      : 'bg-maroon text-cream'
                     : isMine
-                    ? 'bg-panel border border-accent text-fg'
-                    : 'bg-panel border border-border text-fg/60'
+                    ? 'bg-cream text-ink'
+                    : 'bg-board text-cream/70'
                 }`}
+                style={{ borderColor: '#0a0a18' }}
               >
                 {i + 1}
               </div>
@@ -74,8 +86,8 @@ export default function Draft({
           })}
         </div>
 
-        {/* All groups, visible to both — your pickable options stay enabled if it's your turn AND you haven't taken the group */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* All groups */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
           {PICK_ORDER.map((group) => {
             const pool = (draft.pool as any)[group] || [];
             const myPickHere = (myTeam as any)[group.toLowerCase()];
@@ -86,37 +98,38 @@ export default function Draft({
             return (
               <div
                 key={group}
-                className={`bg-panel border rounded p-3 space-y-2 ${
-                  canPick ? 'border-accent' : 'border-border'
-                }`}
+                className={`panel-flash !p-3 space-y-2 ${canPick ? 'animate-shout' : ''}`}
+                style={canPick ? { borderColor: '#ffd400' } : undefined}
               >
-                <h3 className="text-sm font-bold text-fg/80 flex items-center justify-between">
-                  <span>{group}</span>
-                  <span className="text-xs text-fg/40">({pool.length} left)</span>
-                </h3>
+                <div className="flex items-center justify-between">
+                  <span className="chip">{group.replace('_', ' ')}</span>
+                  <span className="text-xs font-bold">{pool.length} left</span>
+                </div>
 
                 {myPickHere && (
-                  <div className="text-xs bg-ok/10 border border-ok/30 rounded p-2">
-                    <div className="text-ok font-bold">YOU: {myPickHere.name}</div>
+                  <div className="border-3 border-ink bg-lime/30 p-2 text-xs"
+                       style={{ borderWidth: 3, borderColor: '#0a0a18', background: '#c8ff0033' }}>
+                    <div className="font-bold text-ink">YOU: {myPickHere.name}</div>
                     {myPickHere.skill != null && (
-                      <div className="text-fg/60">skill {myPickHere.skill}</div>
+                      <div className="text-ink/70">skill {myPickHere.skill}</div>
                     )}
                     {myPickHere.modifier && (
-                      <div className="text-accent text-[10px] mt-1">
-                        {modifierDescription(myPickHere.modifier)}
+                      <div className="text-maroon text-[10px] mt-1">
+                        ✦ {modifierDescription(myPickHere.modifier)}
                       </div>
                     )}
                   </div>
                 )}
                 {oppPickHere && (
-                  <div className="text-xs bg-err/10 border border-err/30 rounded p-2">
-                    <div className="text-err font-bold">OPP: {oppPickHere.name}</div>
+                  <div className="border-3 border-ink bg-maroon/15 p-2 text-xs"
+                       style={{ borderWidth: 3, borderColor: '#0a0a18', background: '#c8102e22' }}>
+                    <div className="font-bold text-maroon">OPP: {oppPickHere.name}</div>
                     {oppPickHere.skill != null && (
-                      <div className="text-fg/60">skill {oppPickHere.skill}</div>
+                      <div className="text-ink/70">skill {oppPickHere.skill}</div>
                     )}
                     {oppPickHere.modifier && (
-                      <div className="text-accent text-[10px] mt-1">
-                        {modifierDescription(oppPickHere.modifier)}
+                      <div className="text-maroon text-[10px] mt-1">
+                        ✦ {modifierDescription(oppPickHere.modifier)}
                       </div>
                     )}
                   </div>
@@ -129,19 +142,20 @@ export default function Draft({
                         key={opt.id}
                         disabled={!canPick}
                         onClick={() => pick(group, opt.id)}
-                        className={`block w-full text-left text-xs rounded px-2 py-1 ${
+                        className={`block w-full text-left text-xs border-2 px-2 py-2 ${
                           canPick
-                            ? 'bg-bg hover:bg-accent hover:text-bg border border-border'
-                            : 'bg-bg/50 text-fg/40 border border-border cursor-not-allowed'
+                            ? 'bg-cream hover:bg-sun text-ink font-bold'
+                            : 'bg-cream/40 text-ink/40 cursor-not-allowed'
                         }`}
+                        style={{ borderColor: '#0a0a18' }}
                       >
-                        <div>{opt.name}</div>
+                        <div className="font-bold">{opt.name}</div>
                         {opt.skill != null && (
-                          <div className="text-fg/40 text-[10px]">skill {opt.skill}</div>
+                          <div className="text-[10px] opacity-70">skill {opt.skill}</div>
                         )}
                         {opt.modifier && (
-                          <div className="text-accent text-[10px] mt-0.5">
-                            {modifierDescription(opt.modifier)}
+                          <div className="text-maroon text-[10px] mt-0.5">
+                            ✦ {modifierDescription(opt.modifier)}
                           </div>
                         )}
                       </button>
@@ -150,15 +164,11 @@ export default function Draft({
                 )}
 
                 {iTookIt && oppTookIt && (
-                  <div className="text-fg/40 text-xs italic">Both picked — pool empty.</div>
+                  <div className="text-ink/50 text-xs italic text-center">Both picked — pool empty.</div>
                 )}
               </div>
             );
           })}
-        </div>
-
-        <div className="text-fg/40 text-xs">
-          Pick {draft.current_turn + 1} of {draft.total} · alternating turns · any unpicked group.
         </div>
       </div>
     </div>
