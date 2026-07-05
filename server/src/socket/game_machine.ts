@@ -209,6 +209,9 @@ export function startGame(room: RoomState): GameState {
     room.first_possession_id === host_id ? 0 : 1;
   const game = newGameState(room.session_id, teams);
   game.possession_idx = possession_idx;
+  // First-possession team starts at their own 25: idx 0 (attacks right) → yardline 25;
+  // idx 1 (attacks left) → yardline 75.
+  game.ball_yardline = possession_idx === 0 ? 25 : 75;
   room.game = game;
   return game;
 }
@@ -309,10 +312,11 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     };
     if (fg.make) {
       game.scores = addPoints(game.scores, game.possession_idx, 0.5);
-      game.ball_yardline = 25;
+      game.possession_idx = game.possession_idx === 0 ? 1 : 0;
+      // New offense at their own 25: idx 0 attacks right (yardline 25), idx 1 left (75)
+      game.ball_yardline = game.possession_idx === 0 ? 25 : 75;
       game.down = 1;
       game.distance = 10;
-      game.possession_idx = game.possession_idx === 0 ? 1 : 0;
     } else {
       // miss = turnover at spot
       game.possession_idx = game.possession_idx === 0 ? 1 : 0;
@@ -417,24 +421,26 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   let change_of_possession = false;
 
   if (adv.touchdown) {
-    // TD → +1 to offense, opponent takes ball at their 25, fresh 1st & 10
-    game.scores = addPoints(game.scores, game.possession_idx, 1);
-    scoring_event = 'td';
-    next_possession = game.possession_idx === 0 ? 1 : 0;
-    next_yardline = 25;
-    next_down = 1;
-    next_distance = 10;
-    change_of_possession = true;
-  } else if (adv.safety) {
-    // Safety → +0.5 to defense (the tackling team), opponent takes at 25
-    game.scores = addPoints(game.scores, game.possession_idx === 0 ? 1 : 0, 0.5);
-    scoring_event = 'safety';
-    next_possession = game.possession_idx === 0 ? 1 : 0;
-    next_yardline = 25;
-    next_down = 1;
-    next_distance = 10;
-    change_of_possession = true;
-  } else if (resolve.turnover) {
+      // TD → +1 to offense, opponent takes ball at their own 25 (going the opposite
+      // direction). new_offense_idx === 0 attacks right → starts at yardline 25.
+      // new_offense_idx === 1 attacks left → starts at yardline 75.
+      game.scores = addPoints(game.scores, game.possession_idx, 1);
+      scoring_event = 'td';
+      next_possession = game.possession_idx === 0 ? 1 : 0;
+      next_yardline = next_possession === 0 ? 25 : 75;
+      next_down = 1;
+      next_distance = 10;
+      change_of_possession = true;
+    } else if (adv.safety) {
+      // Safety → +0.5 to defense (the tackling team), opponent takes at their own 25
+      game.scores = addPoints(game.scores, game.possession_idx === 0 ? 1 : 0, 0.5);
+      scoring_event = 'safety';
+      next_possession = game.possession_idx === 0 ? 1 : 0;
+      next_yardline = next_possession === 0 ? 25 : 75;
+      next_down = 1;
+      next_distance = 10;
+      change_of_possession = true;
+    } else if (resolve.turnover) {
     // Defensive read was correct → possession flips, ball at play's end spot
     next_possession = game.possession_idx === 0 ? 1 : 0;
     next_down = 1;

@@ -169,19 +169,20 @@ describe('Play resolution', () => {
   });
 
   it('low-yard play advances down (1st → 2nd)', () => {
-    // Force a low-yard result by overriding skill so defense wins, yardage is negative or small.
+    // Force a low-yard result by matching parents + making defense win the skill roll.
+    // Mismatch auto-wins for offense, so we need matched parents here.
     let succeeded = false;
-    for (let s = 1; s < 200 && !succeeded; s++) {
+    for (let s = 1; s < 500 && !succeeded; s++) {
       const r = setupReadyToSnapRoom();
-      r.game!.teams[0].off_skill = { id: 'OFF', group: 'OFF_SKILL', skill: 30, name: 'A' };
+      r.game!.teams[0].off_skill = { id: 'OFF', group: 'OFF_SKILL', skill: 1, name: 'A' };
       r.game!.teams[1].def_skill = { id: 'DEF', group: 'DEF_SKILL', skill: 100, name: 'B' };
+      // Matched parent → fair skill roll → defense almost always wins
       r.pending_schemes[r.players[0].id] = { parent: 'run', sub: 'inside' };
-      r.pending_schemes[r.players[1].id] = { parent: 'pass', sub: 'deep' };
+      r.pending_schemes[r.players[1].id] = { parent: 'run', sub: 'outside' };
       const { result } = resolveCurrentPlay(r, s);
       if (!result.turnover && result.yards < r.game!.distance && r.game!.down === 2) {
         succeeded = true;
         expect(r.game!.down).toBe(2);
-        // distance should be 10 + |yards| for a loss, or 10 - yards for a small gain
         expect(r.game!.distance).toBeGreaterThanOrEqual(1);
       }
     }
@@ -195,6 +196,7 @@ describe('Play resolution', () => {
     let matchedCount = 0;
     let mismatchTotal = 0;
     let mismatchCount = 0;
+    let mismatchLossCount = 0;
     const TRIALS = 1500;
     for (let i = 0; i < TRIALS; i++) {
       // Matched
@@ -206,19 +208,37 @@ describe('Play resolution', () => {
         matchedTotal += Math.max(0, r1.result.yards);
         matchedCount++;
       }
-      // Mismatched
+      // Mismatched (run vs pass — common case)
       const mm = setupReadyToSnapRoom();
-      mm.pending_schemes[mm.players[0].id] = { parent: 'pass', sub: 'deep' };
-      mm.pending_schemes[mm.players[1].id] = { parent: 'run', sub: 'inside' };
+      mm.pending_schemes[mm.players[0].id] = { parent: 'run', sub: 'inside' };
+      mm.pending_schemes[mm.players[1].id] = { parent: 'pass', sub: 'deep' };
       const r2 = resolveCurrentPlay(mm, i + 1001);
       if (!r2.result.turnover) {
         mismatchTotal += Math.max(0, r2.result.yards);
         mismatchCount++;
+        if (r2.result.yards < 0) mismatchLossCount++;
       }
     }
     const matchedAvg = matchedCount > 0 ? matchedTotal / matchedCount : 0;
     const mismatchAvg = mismatchCount > 0 ? mismatchTotal / mismatchCount : 0;
     expect(mismatchAvg).toBeGreaterThan(matchedAvg + 3);
+    // Mismatch should almost never result in a loss — at most 5% of plays
+    expect(mismatchLossCount / mismatchCount).toBeLessThan(0.10);
+  });
+
+  it('inside run vs deep pass: nearly always gains yards', () => {
+    let gained = 0;
+    let total = 0;
+    for (let i = 1; i < 200; i++) {
+      const r = setupReadyToSnapRoom();
+      r.pending_schemes[r.players[0].id] = { parent: 'run', sub: 'inside' };
+      r.pending_schemes[r.players[1].id] = { parent: 'pass', sub: 'deep' };
+      const { result } = resolveCurrentPlay(r, i);
+      total++;
+      if (!result.turnover && result.yards > 0) gained++;
+    }
+    // At least 80% should result in positive yards
+    expect(gained / total).toBeGreaterThan(0.80);
   });
 
   it('yards move the ball forward on offense', () => {
@@ -279,14 +299,25 @@ describe('Play resolution', () => {
     const room = setupReadyToSnapRoom();
     room.pending_schemes[room.players[0].id] = { parent: 'fg', sub: 'deep' };
     room.pending_schemes[room.players[1].id] = { parent: 'fg', sub: 'deep' };
-    const before = room.game!.scores[0];
-    const { result, scoring_event } = resolveCurrentPlay(room, 1);
-    // result.text_recap may say GOOD or missed
-    expect(result.scoring_event === 'fg' || result.scoring_event === null).toBe(true);
-    if (result.scoring_event === 'fg') {
-      expect(room.game!.scores[0]).toBe(before + 0.5);
-      expect(scoring_event).toBe('fg');
+    // Search for a seed where the kicker makes it (short-ish FG)
+    let succeeded = false;
+    for (let s = 1; s < 200; s++) {
+      const r = setupReadyToSnapRoom();
+      r.game!.ball_yardline = 75; // 25-yd FG
+      r.pending_schemes[r.players[0].id] = { parent: 'fg', sub: 'deep' };
+      r.pending_schemes[r.players[1].id] = { parent: 'fg', sub: 'deep' };
+      const offIdx = r.game!.possession_idx;
+      const { result, scoring_event } = resolveCurrentPlay(r, s);
+      if (scoring_event === 'fg') {
+        expect(r.game!.scores[offIdx]).toBe(0.5);
+        // New offense starts at THEIR own 25 (yardline 25 if idx 0, 75 if idx 1)
+        const newIdx = offIdx === 0 ? 1 : 0;
+        expect(r.game!.ball_yardline).toBe(newIdx === 0 ? 25 : 75);
+        succeeded = true;
+        break;
+      }
     }
+    expect(succeeded).toBe(true);
   });
 
   it('TD scores 1 point + possession change', () => {

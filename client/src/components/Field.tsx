@@ -356,8 +356,16 @@ function drawPlay(
     ctx.stroke();
   }
 
-  // Scoring flashes — priority: SAFETY > TD > TURNOVER
-  if (result.scoring_event === 'safety' && progress > 0.5) {
+  // Scoring flashes — priority: FG made > SAFETY > TD > TURNOVER
+  if (result.scoring_event === 'fg' && progress > 0.5) {
+    ctx.fillStyle = `rgba(63,185,80,${(progress - 0.5) * 2})`;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 36px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('FIELD GOAL GOOD! +0.5', w / 2, h / 2);
+    ctx.textAlign = 'start';
+  } else if (result.scoring_event === 'safety' && progress > 0.5) {
     ctx.fillStyle = `rgba(210,153,34,${(progress - 0.5) * 2})`;
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = '#fff';

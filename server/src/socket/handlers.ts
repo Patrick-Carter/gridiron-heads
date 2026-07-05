@@ -148,6 +148,11 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
         socket.emit('session:error', { error: 'no_current_play' });
         return;
       }
+      // Punt and FG have no sub-types — audibles not allowed
+      if (currentPlay.parent === 'punt' || currentPlay.parent === 'fg') {
+        socket.emit('session:error', { error: 'no_audible_on_special' });
+        return;
+      }
       if (!isValidAudibleSub(currentPlay, target_sub)) {
         socket.emit('session:error', { error: 'invalid_audible_sub' });
         return;
@@ -171,6 +176,11 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       if (player_idx === -1) return;
       if (player_idx !== game.possession_idx) {
         socket.emit('session:error', { error: 'not_offense' });
+        return;
+      }
+      const currentPlay: Play | undefined = room.pending_schemes[sdata.player_id];
+      if (currentPlay && (currentPlay.parent === 'punt' || currentPlay.parent === 'fg')) {
+        socket.emit('session:error', { error: 'no_audible_on_special' });
         return;
       }
       if (game.fake_audibles_used[player_idx] > 0) {
@@ -202,6 +212,10 @@ export function registerSocketHandlers(io: IOServer, _db: Database): void {
       const currentPlay: Play | undefined = room.pending_schemes[sdata.player_id];
       if (!currentPlay) {
         socket.emit('session:error', { error: 'no_current_play' });
+        return;
+      }
+      if (currentPlay.parent === 'punt' || currentPlay.parent === 'fg') {
+        socket.emit('session:error', { error: 'no_audible_on_special' });
         return;
       }
       if (!isValidAudibleSub(currentPlay, target_sub)) {

@@ -95,17 +95,23 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
     def_skill = applyPctMods(def_skill, input.qb_def_modifiers, parent);
   }
 
-  // Skill roll. When the defense guesses the wrong parent, give the offense a
-// big skill-roll bonus — the defense is out of position and shouldn't be able
-// to stop the play reliably. When the parent matches, no bonus — defense is set.
-  let off_skill_eff = off_skill;
-  let def_skill_eff = def_skill;
-  if (!parent_match) {
-    off_skill_eff = Math.min(100, off_skill + 30);
-    def_skill_eff = Math.max(1, def_skill - 30);
+  // Skill roll. When the defense guesses the wrong parent, the offense auto-wins
+// the skill roll — defense is out of position and shouldn't be able to stop the play.
+// The skill values still scale the yardage (via yards_pct below). When parent matches,
+// it's a fair roll: higher skill wins, ties = 0 yards, no turnover.
+  let offense_wins = false;
+  let defense_wins = false;
+  if (parent === 'punt' || parent === 'fg') {
+    offense_wins = false;
+    defense_wins = false;
+  } else if (!parent_match) {
+    offense_wins = true;
+  } else {
+    const off_roll = Math.floor(rng() * (off_skill + 1));
+    const def_roll = Math.floor(rng() * (def_skill + 1));
+    if (off_roll > def_roll) offense_wins = true;
+    else if (def_roll > off_roll) defense_wins = true;
   }
-  const off_roll = parent === 'punt' || parent === 'fg' ? 0 : Math.floor(rng() * (off_skill_eff + 1));
-  const def_roll = parent === 'punt' || parent === 'fg' ? 0 : Math.floor(rng() * (def_skill_eff + 1));
 
   // Turnover chance
   let turnover_chance = 0;
@@ -121,14 +127,15 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
     if (parent === 'punt' || parent === 'fg') {
       // punt/fg yardage handled by caller (special-case per D11)
       yards = 0;
-    } else if (off_roll > def_roll) {
-      // Mismatch → bigger gain (defense out of position)
+    } else if (offense_wins) {
+      // Mismatch: 5..25 yds (defense out of position)
+      // Match: 1..15 yds (fair skill roll)
       const max = parent_match ? 15 : 25;
-      yards = 5 + Math.floor(rng() * (max - 4)); // 5..max
-    } else if (def_roll > off_roll) {
-      // Even on a "win" for defense, mismatch should rarely result in a big loss
-      // because defense is out of position. Cap the loss.
-      yards = -(1 + Math.floor(rng() * 2)); // -1..-2
+      yards = (parent_match ? 1 : 5) + Math.floor(rng() * (max - (parent_match ? 0 : 4)));
+    } else if (defense_wins) {
+      // Defense stops the play. On mismatch this shouldn't happen, but if it does
+      // (e.g. QB mod flipped the skill), still cap the loss.
+      yards = -(1 + Math.floor(rng() * (parent_match ? 4 : 2)));
     }
     yards = applyYardsPct(yards, input.qb_off_modifiers, parent);
   }
@@ -138,8 +145,8 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
     effective_def_play,
     parent_match,
     sub_match,
-    off_roll,
-    def_roll,
+    off_roll: 0,
+    def_roll: 0,
     turnover,
     turnover_chance,
     yards,
