@@ -125,25 +125,37 @@ export default function Field({
     const duration = 1800;
     // Direction comes from the play's offense_direction (captured at snap time on server)
     const direction: 1 | -1 = (playResult.offense_direction ?? 1) as 1 | -1;
+    // During animation, draw the field at the play's starting LOS (yardline_before),
+    // NOT the current ballYardline (which may have already advanced to yardline_after
+    // if this was a TD/turnover). After the animation finishes, the static useEffect
+    // redraws at the NEW ballYardline for the static between-plays view.
+    const animLosYardline = playResult.yardline_before ?? ballYardline;
 
     const animate = (t: number) => {
       const elapsed = t - start;
       const progress = Math.min(1, elapsed / duration);
-      // During animation: field without lineups, then animated overlays
-      drawField(ctx, canvas, ballYardline, direction);
+      drawField(ctx, canvas, animLosYardline, direction);
       drawPlay(ctx, canvas, playResult, seed, progress, direction);
       if (progress < 1) {
         animationRef.current = requestAnimationFrame(animate);
       } else {
         animationRef.current = null;
         onAnimationDone?.();
+        // Force an immediate redraw at the new (post-play) ballYardline so the
+        // static lineups appear at the correct spot without waiting for a re-render.
+        const newDirection: 1 | -1 = possessionIdx === 0 ? 1 : -1;
+        drawField(ctx, canvas, ballYardline, newDirection);
+        const off = buildOffense();
+        const def = buildDefense();
+        drawPlayerSet(ctx, off, ballYardline, newDirection, '#e6edf3');
+        drawPlayerSet(ctx, def, ballYardline, newDirection, '#f85149');
       }
     };
     animationRef.current = requestAnimationFrame(animate);
     return () => {
       if (animationRef.current != null) cancelAnimationFrame(animationRef.current);
     };
-  }, [playResult, isAnimating]);
+  }, [playResult, isAnimating, ballYardline, possessionIdx]);
 
   return (
     <canvas
@@ -344,25 +356,30 @@ function drawPlay(
     ctx.stroke();
   }
 
-  // Turnover flash
-  if (result.turnover && progress > 0.5) {
+  // Scoring flashes — priority: SAFETY > TD > TURNOVER
+  if (result.scoring_event === 'safety' && progress > 0.5) {
+    ctx.fillStyle = `rgba(210,153,34,${(progress - 0.5) * 2})`;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 36px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('SAFETY!', w / 2, h / 2);
+    ctx.textAlign = 'start';
+  } else if (result.scoring_event === 'td' && progress > 0.5) {
+    ctx.fillStyle = `rgba(63,185,80,${(progress - 0.5) * 2})`;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 36px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('TOUCHDOWN!', w / 2, h / 2);
+    ctx.textAlign = 'start';
+  } else if (result.turnover && progress > 0.5) {
     ctx.fillStyle = `rgba(248,81,73,${(progress - 0.5) * 2})`;
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 36px monospace';
     ctx.textAlign = 'center';
     ctx.fillText('TURNOVER!', w / 2, h / 2);
-    ctx.textAlign = 'start';
-  }
-
-  // TD banner
-  if (result.scoring_event === 'td' && progress > 0.7) {
-    ctx.fillStyle = `rgba(63,185,80,${(progress - 0.7) * 3})`;
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 36px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('TOUCHDOWN!', w / 2, h / 2);
     ctx.textAlign = 'start';
   }
 }
