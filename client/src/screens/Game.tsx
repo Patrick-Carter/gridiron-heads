@@ -25,7 +25,7 @@ import {
 } from '../audio/synth.js';
 import { playCrowdRoar, isBigPlay } from '../audio/crowd.js';
 import type { SessionSnapshot } from '../hooks/useSession.js';
-import { ballSpot, type Play } from '@gridiron/shared';
+import type { Play } from '@gridiron/shared';
 
 export default function Game({
   state,
@@ -142,31 +142,17 @@ export default function Game({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
         {/* Left: Field + Score */}
         <div className="lg:col-span-2 space-y-3">
-          <ScorePanel scores={game.scores} myIdx={myIdx} players={players} />
-
-          {/* Roster trigger — click either name to open that team's full
-              6-group roster. Lives above the field so it never competes with
-              the picker / audibles panel on the right rail. */}
-          <div className="panel-flash !py-2">
-            <div className="flex items-center justify-center gap-2 flex-wrap">
-              <span className="text-xs font-bold text-ink/60">👇 Rosters</span>
-              <button
-                onClick={() => setRosterIdx(0)}
-                data-testid="roster-trigger-0"
-                className={`btn-flash ${myIdx === 0 ? 'btn-go' : 'btn-danger'} text-sm !min-h-0 py-1.5`}
-              >
-                {myIdx === 0 && '⭐ '}{players[0]?.name}{myIdx === 0 && ' (YOU)'}
-              </button>
-              <span className="text-ink/40 font-black text-xs">vs</span>
-              <button
-                onClick={() => setRosterIdx(1)}
-                data-testid="roster-trigger-1"
-                className={`btn-flash ${myIdx === 1 ? 'btn-go' : 'btn-danger'} text-sm !min-h-0 py-1.5`}
-              >
-                {myIdx === 1 && '⭐ '}{players[1]?.name}{myIdx === 1 && ' (YOU)'}
-              </button>
-            </div>
-          </div>
+          <ScorePanel
+            scores={game.scores}
+            myIdx={myIdx}
+            players={players}
+            possessionIdx={game.possession_idx}
+            down={game.down}
+            distance={game.distance}
+            ballYardline={game.ball_yardline}
+            offenseDirection={game.possession_idx === 0 ? 1 : -1}
+            onOpenRoster={setRosterIdx}
+          />
 
           <div className="field-frame">
             <Field
@@ -212,25 +198,6 @@ export default function Game({
 
         {/* Right: Controls + Log */}
         <div className="space-y-3">
-          <div className="panel-flash flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span className="font-bold">
-              <span className="chip !bg-sun !text-ink">
-                {game.down === 1 ? '1st' : game.down === 2 ? '2nd' : game.down === 3 ? '3rd' : '4th'}
-              </span>{' '}
-              &amp; {game.distance}
-              {(() => {
-                const spot = ballSpot(game);
-                if (spot.label === null) return ' at midfield';
-                return ` at ${spot.label.toLowerCase()} ${spot.yards}`;
-              })()}
-            </span>
-            <span className="text-xs font-bold">
-              <span className={isOffense ? 'chip !bg-lime' : 'chip !bg-maroon !text-cream'}>
-                {isOffense ? 'OFFENSE 🏈' : 'DEFENSE 🛡️'}
-              </span>
-            </span>
-          </div>
-
           {game.phase === 'awaiting_schemes' && !pendingMyScheme && (
             <SchemePicker
               onPick={(parent, sub) => send(EVENTS.SCHEME_PICK, { parent, sub })}

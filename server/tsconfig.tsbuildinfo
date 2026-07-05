@@ -1,1 +1,1 @@
-{"root":["./src/app.ts","./src/db.ts","./src/index.ts","./src/rooms.ts","./src/security.ts","./src/routes/sessions.ts","./src/socket/cpu.ts","./src/socket/game_machine.ts","./src/socket/handlers.ts"],"version":"5.9.3"}
+{"root":["./src/app.ts","./src/db.ts","./src/index.ts","./src/rooms.ts","./src/security.ts","./src/routes/lobby.ts","./src/routes/sessions.ts","./src/socket/cpu.ts","./src/socket/game_machine.ts","./src/socket/handlers.ts"],"version":"5.9.3"}
