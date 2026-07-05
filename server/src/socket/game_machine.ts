@@ -12,6 +12,9 @@ import {
   addPoints,
   checkWinner,
   mulberry32,
+  flipPossession,
+  offenseDirection,
+  yardsToEndzone,
 } from '@gridiron/shared';
 import type {
   GameState,
@@ -279,9 +282,10 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   if (off_play.parent === 'fg') {
     const kicker = offense.kicker;
     const power = kicker?.skill ?? 70;
-    const yards_to_endzone = 100 - game.ball_yardline;
+    const ytg = yardsToEndzone(game); // direction-aware
+    const offense_direction = offenseDirection(game);
     const fg = attemptFieldGoal({
-      yards_to_endzone,
+      yards_to_endzone: ytg,
       kicker_power: power,
       seed,
       qb_modifiers: qb_off_mods,
@@ -305,24 +309,21 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       yards: 0,
       scoring_event: fg.make ? 'fg' : null,
       seed,
-      offense_direction: 1 as 1 | -1,
+      offense_direction,
       text_recap: fg.make
-        ? `FIELD GOAL IS GOOD! (${fg.total} > ${yards_to_endzone})`
-        : `FG missed (${fg.total} ≤ ${yards_to_endzone})`,
+        ? `FIELD GOAL IS GOOD! (${fg.total} > ${ytg})`
+        : `FG missed (${fg.total} ≤ ${ytg})`,
     };
     if (fg.make) {
       game.scores = addPoints(game.scores, game.possession_idx, 0.5);
-      game.possession_idx = game.possession_idx === 0 ? 1 : 0;
-      // Opposing team at their own 25; field always renders going right.
+      // New offense takes ball at absolute yardline 25; they attack the
+      // OPPOSITE end zone — flipPossession handles that and resets to 1st & 10.
       game.ball_yardline = 25;
-      game.down = 1;
-      game.distance = 10;
+      Object.assign(game, flipPossession(game));
     } else {
-      // miss = turnover at spot
-      game.possession_idx = game.possession_idx === 0 ? 1 : 0;
-      game.ball_yardline = 100 - yards_to_endzone;
-      game.down = 1;
-      game.distance = 10;
+      // Miss → opposing team at the LOS (same absolute spot), fresh 1st & 10.
+      game.ball_yardline = game.ball_yardline;
+      Object.assign(game, flipPossession(game));
     }
     clearAudibles(game);
     clearSchemes(room);
@@ -341,11 +342,13 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     const turnover_chance =
       parent_match && sub_match ? 0.25 : parent_match ? 0.05 : 0;
     const turnover = Math.random() < turnover_chance;
-    // Punt yardage: 30-50 yard kick
+    // Punt yardage: 30-50 yard kick (FORWARD in the offense's direction).
     const rng = mulberry32(seed);
     const punt_yards = 30 + Math.floor(rng() * 21);
-    let yardline_after = game.ball_yardline + punt_yards;
-    if (yardline_after >= 100) yardline_after = 100; // touchback -> opp 25 means yardline=75
+    const off_dir = offenseDirection(game);
+    // Move ball forward from LOS in the offense's direction; clamp to field.
+    let yardline_after = game.ball_yardline + punt_yards * off_dir;
+    yardline_after = Math.max(0, Math.min(100, yardline_after));
     const result: PlayResult = {
       down: game.down,
       distance: game.distance,
@@ -362,24 +365,17 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       yards: punt_yards,
       scoring_event: null,
       seed,
-      offense_direction: 1 as 1 | -1,
+      offense_direction: off_dir,
       text_recap: turnover
         ? `PUNT BLOCKED! Defense takes over.`
         : `Punt of ${punt_yards} yards.`,
     };
-    if (turnover) {
-      // Defense takes over at spot
-      game.possession_idx = game.possession_idx === 0 ? 1 : 0;
-      game.ball_yardline = yardline_after;
-      game.down = 1;
-      game.distance = 10;
-    } else {
-      // Receiving team takes at landing spot (mirror to opp side)
-      game.possession_idx = game.possession_idx === 0 ? 1 : 0;
-      game.ball_yardline = 100 - yardline_after;
-      game.down = 1;
-      game.distance = 10;
-    }
+    // Either way, receiving team gets the ball at the absolute landing spot
+    // with a fresh 1st & 10 and attacks the OPPOSITE end zone. The yardline
+    // stays as-is (no 100 - x mirroring); the direction flip is what changes
+    // who has to drive how far.
+    game.ball_yardline = yardline_after;
+    Object.assign(game, flipPossession(game));
     clearAudibles(game);
     clearSchemes(room);
     game.history.push(result);
@@ -393,8 +389,8 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   // Run/Pass: standard resolvePlay
   const offSkill = offense.off_skill?.skill ?? 60;
   const defSkill = defense.def_skill?.skill ?? 60;
-  // Field always renders going right; direction is always +1.
-  const offense_direction: 1 | -1 = 1;
+  // Direction is per-possession: team 0 → +1 (toward 100), team 1 → -1 (toward 0).
+  const offense_direction = offenseDirection(game);
   const resolve = resolvePlay({
     off_skill: offSkill,
     def_skill: defSkill,
@@ -407,6 +403,7 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     qb_def_modifiers: qb_def_mods,
     seed,
     yardline_before: game.ball_yardline,
+    offense_direction,
   });
   const yardline_before = game.ball_yardline;
   const adv = advanceAfterPlay(game, resolve.yards);
@@ -422,17 +419,19 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   let change_of_possession = false;
 
   if (adv.touchdown) {
-      // TD → +1 to offense. Opposing team takes ball at THEIR own 25 (yardline 25).
-      // Field is always rendered going right; no mirroring needed.
+      // TD → +1 to offense. New offense takes ball at absolute yardline 25
+      // (touchback-style for both teams) and attacks the OPPOSITE end zone.
       game.scores = addPoints(game.scores, game.possession_idx, 1);
       scoring_event = 'td';
-      next_possession = game.possession_idx === 0 ? 1 : 0;
       next_yardline = 25;
+      next_possession = game.possession_idx === 0 ? 1 : 0;
       next_down = 1;
       next_distance = 10;
       change_of_possession = true;
     } else if (adv.safety) {
-      // Safety → +0.5 to defense. Opposing team takes ball at THEIR own 25.
+      // Safety → +0.5 to defense. Defense gets ball at absolute yardline 25
+      // (free kick style — same start spot for both teams) and attacks the
+      // OPPOSITE end zone.
       game.scores = addPoints(game.scores, game.possession_idx === 0 ? 1 : 0, 0.5);
       scoring_event = 'safety';
       next_possession = game.possession_idx === 0 ? 1 : 0;
@@ -441,13 +440,20 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       next_distance = 10;
       change_of_possession = true;
     } else if (resolve.turnover) {
-      // Defensive read was correct → possession flips, ball at play's end spot
+      // Defensive read was correct → ball flips at the post-play LOS. The new
+      // offense attacks the OTHER end zone — possession flip alone is enough;
+      // ball_yardline stays at the current spot (which the resolver already
+      // advanced correctly). Fresh 1st & 10.
+      next_yardline = adv.next.ball_yardline;
       next_possession = game.possession_idx === 0 ? 1 : 0;
       next_down = 1;
       next_distance = 10;
       change_of_possession = true;
     } else if (game.down === 4 && resolve.yards < game.distance) {
-      // Turnover on downs: failed to convert on 4th
+      // Turnover on downs: failed to convert on 4th. New offense takes ball
+      // at the LOS (post-play yardline) with a fresh 1st & 10, attacks the
+      // OPPOSITE end zone.
+      next_yardline = adv.next.ball_yardline;
       next_possession = game.possession_idx === 0 ? 1 : 0;
       next_down = 1;
       next_distance = 10;
