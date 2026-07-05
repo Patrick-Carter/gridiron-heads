@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.db
+*.db-wal
+*.db-shm
+.env
+.DS_Store
+client/dist/
+server/dist/
+shared/dist/
+coverage/
+.vite/
