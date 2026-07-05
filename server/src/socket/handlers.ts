@@ -96,23 +96,60 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
 
       const existing = room.players.find((p) => p.id === player_id);
       if (!existing) {
-        // Token resolved to a player not in the room anymore (host removed,
-        // session reset). Reject rather than rebuild.
-        rejectAuth(socket, 'not_a_member');
-        return;
+        // Token validates, but the in-memory room doesn't have this player.
+        // This happens when a 2nd player joins via HTTP /api/sessions/:id/join
+        // (which only writes the DB row + token) before they connect via WS —
+        // the in-memory room was already populated by the host's prior WS
+        // join and hasn't been refreshed. The auth_token IS the proof of
+        // identity; pull the display name from session_players and add them
+        // in. A valid token with no DB row would mean a stale token, which
+        // we still reject.
+        const spRow = db
+          .prepare(
+            'SELECT display_name FROM session_players WHERE session_id = ? AND player_id = ?',
+          )
+          .get(session_id, player_id) as { display_name: string } | undefined;
+        if (!spRow) {
+          rejectAuth(socket, 'not_a_member');
+          return;
+        }
+        const result = addPlayer(room, player_id, spRow.display_name);
+        if (!result.ok) {
+          rejectAuth(socket, result.reason);
+          return;
+        }
+        // Mirror into DB state.players so the next re-hydration sees them
+        // (server restart won't lose their spot in the room).
+        const stateRow = db
+          .prepare('SELECT state FROM sessions WHERE id = ?')
+          .get(session_id) as { state: string } | undefined;
+        if (stateRow) {
+          const persisted = JSON.parse(stateRow.state);
+          if (!persisted.players.some((p: any) => p.id === player_id)) {
+            persisted.players.push({
+              id: player_id,
+              name: spRow.display_name,
+              ready: false,
+            });
+            db.prepare(
+              'UPDATE sessions SET state = ?, last_activity_at = ? WHERE id = ?',
+            ).run(JSON.stringify(persisted), Date.now(), session_id);
+          }
+        }
       }
       // Optional display-name refresh — only if valid + non-CPU.
+      const player = room.players.find((p) => p.id === player_id)!;
       if (
         typeof raw?.display_name === 'string' &&
         raw.display_name.trim() &&
         raw.display_name.trim().length <= 32 &&
-        !existing.is_cpu &&
-        existing.name !== raw.display_name.trim().slice(0, 32)
+        !player.is_cpu &&
+        player.name !== raw.display_name.trim().slice(0, 32)
       ) {
         // Cheap sanitization on the wire only — already validated when the
         // name was originally issued. Don't persist ad-hoc names here; the
         // route POST /api/sessions is the only writer.
-        existing.name = raw.display_name.trim().slice(0, 32);
+        player.name = raw.display_name.trim().slice(0, 32);
       }
       touchRoom(room);
       broadcast(io, session_id, room);

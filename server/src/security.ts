@@ -11,7 +11,15 @@ import type { Database } from 'better-sqlite3';
 // ---------------------------------------------------------------------------
 
 function defaultAllowedOrigins(): string[] {
-  return ['https://bb.carterhub.net'];
+  // Production: the public Cloudflare Tunnel origin.
+  // Local dev: server on :3000, Vite client on :5173 (both with http).
+  return [
+    'https://bb.carterhub.net',
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:5173',
+  ];
 }
 
 export function loadAllowedOrigins(): string[] {
