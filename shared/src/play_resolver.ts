@@ -1,5 +1,9 @@
-// Play resolver — skill roll + turnover check + yardage.
+// Play resolver — skill roll + line roll + turnover check + yardage.
 // Skill roll: each side rolls [0, skill]. Higher wins. Ties = 0 yards, no turnover.
+// Line roll (D-LINE / O-LINE): when the skill gap crosses LINE_GAP_LEAN, the
+// trenches decide the play — a LEAN gap nudges yardage, a DOMINATE gap flips
+// the outcome outright (blow-up or stuff). Below the threshold the line is
+// ignored (no rng calls — common plays stay seed-stable).
 import { mulberry32 } from './rng.js';
 import type { Play, PlayParent, QBModifier } from './types.js';
 import { flipSubtype } from './types.js';
@@ -14,6 +18,11 @@ export interface ResolveInput {
   off_fake_audible?: boolean;
   qb_off_modifiers?: QBModifier[];  // applied to off_skill roll
   qb_def_modifiers?: QBModifier[];  // applied to def_skill roll
+  /** O_LINE skill (50..100). Used by the line roll. Optional — default 60
+   *  matches the server's fallback for null d_line/o_line. */
+  off_line_skill?: number;
+  /** D_LINE skill (50..100). */
+  def_line_skill?: number;
   seed: number;
   /** Ball yardline before the play (0..100). Used to cap yards at the remaining
    *  distance to the goal line so a +20 gain from the 75 doesn't leave the ball
@@ -34,11 +43,27 @@ export interface ResolveOutput {
   sub_match: boolean;
   off_roll: number;
   def_roll: number;
+  /** Which side the line roll picked as winner, if the line roll fired.
+   *  null when the gap was below LINE_GAP_LEAN (line roll skipped entirely). */
+  line_winner: 'offense' | 'defense' | null;
+  /** Magnitude of the line roll gap (winner_roll - loser_roll). 0 when skipped. */
+  line_roll_gap: number;
+  /** "lean" (gap 20..39, yardage nudged) | "dominate" (gap >=40, outcome flipped) | null. */
+  line_regime: 'lean' | 'dominate' | null;
   turnover: boolean;
   turnover_chance: number;
   yards: number;
   seed: number;
 }
+
+// === Line roll knobs (D-LINE / O-LINE mechanic) ==============================
+/** Minimum skill gap to trigger ANY line roll. Below this the trenches stay
+ *  out of the rng stream so common plays don't shift downstream seed rolls. */
+export const LINE_GAP_LEAN = 20;
+/** Gap at which the line roll FLIPS the outcome (blow-up / stuff) instead of
+ *  just nudging yardage. */
+export const LINE_GAP_DOMINATE = 40;
+// =============================================================================
 
 function applyPctMods(
   base: number,
@@ -106,9 +131,9 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
   }
 
   // Skill roll. When the defense guesses the wrong parent, the offense auto-wins
-// the skill roll — defense is out of position and shouldn't be able to stop the play.
-// The skill values still scale the yardage (via yards_pct below). When parent matches,
-// it's a fair roll: higher skill wins, ties = 0 yards, no turnover.
+  // the skill roll — defense is out of position and shouldn't be able to stop the play.
+  // The skill values still scale the yardage (via yards_pct below). When parent matches,
+  // it's a fair roll: higher skill wins, ties = 0 yards, no turnover.
   let offense_wins = false;
   let defense_wins = false;
   if (parent === 'punt' || parent === 'fg') {
@@ -123,10 +148,61 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
     else if (def_roll > off_roll) defense_wins = true;
   }
 
-  // Turnover chance
+  // === Line roll (D-LINE / O-LINE mechanic) =================================
+  // Only consumes rng when the skill gap crosses LINE_GAP_LEAN. Below that the
+  // trenches are dormant — common plays stay seed-stable for the downstream
+  // tests / replays.
+  let line_winner: 'offense' | 'defense' | null = null;
+  let line_roll_gap = 0;
+  let line_regime: 'lean' | 'dominate' | null = null;
+  // Track whether the line DOMINATED and forced a specific outcome — used
+  // downstream by the yardage tiers + recap text.
+  let line_dominated_offense = false; // offense dominates line → defense suffers
+  let line_dominated_defense = false; // defense dominates line → offense suffers
+
+  if (parent === 'run' || parent === 'pass') {
+    const off_line_skill = input.off_line_skill ?? 60;
+    const def_line_skill = input.def_line_skill ?? 60;
+    const skill_gap = Math.abs(off_line_skill - def_line_skill);
+    if (skill_gap >= LINE_GAP_LEAN) {
+      const off_line_roll = Math.floor(rng() * (off_line_skill + 1));
+      const def_line_roll = Math.floor(rng() * (def_line_skill + 1));
+      // Tie → no effect (gap stays zero, line is dormant this play).
+      if (off_line_roll !== def_line_roll) {
+        const offense_line_won = off_line_roll > def_line_roll;
+        line_winner = offense_line_won ? 'offense' : 'defense';
+        line_roll_gap = Math.abs(off_line_roll - def_line_roll);
+        line_regime = skill_gap >= LINE_GAP_DOMINATE ? 'dominate' : 'lean';
+        line_dominated_offense = offense_line_won && line_regime === 'dominate';
+        line_dominated_defense = !offense_line_won && line_regime === 'dominate';
+      }
+    }
+  }
+  // ===========================================================================
+
+  // Apply DOMINATE flips to offense_wins / defense_wins BEFORE yardage tiers.
+  // A dominate-offense line turns the play into "offense wins" regardless of
+  // the parent-match / skill-roll outcome — the line opened a hole. A
+  // dominate-defense line forces the play into "defense wins" — stuff behind
+  // the LOS. LEAN doesn't flip winners; it just nudges yardage downstream.
+  if (line_dominated_offense) {
+    offense_wins = true;
+    defense_wins = false;
+  } else if (line_dominated_defense) {
+    offense_wins = false;
+    defense_wins = true;
+  }
+
+  // Turnover chance. When the defense DOMINATES the line (stuff behind the LOS
+  // + fumble risk), we bump turnover odds even when the skill read wasn't
+  // perfect — a blown-up run often ends with the ball on the ground.
   let turnover_chance = 0;
   if (parent_match && sub_match) turnover_chance = 0.25;
   else if (parent_match) turnover_chance = 0.05;
+  if (line_dominated_defense && !line_dominated_offense) {
+    // Stuff play → +15% fumble chance on top of base.
+    turnover_chance = Math.min(1, turnover_chance + 0.15);
+  }
   turnover_chance = applyTurnoverMod(turnover_chance, input.qb_off_modifiers, parent);
 
   const turnover = rng() < turnover_chance;
@@ -138,11 +214,17 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
       // punt/fg yardage handled by caller (special-case per D11)
       yards = 0;
     } else if (offense_wins) {
+      // === Offense wins the skill roll (or line flipped it for offense) ===
       // Full mismatch → big yards (defense out of position)
       // Parent-match sub-mismatch → smaller yards (defense had the right idea, wrong detail)
       // Match → normal fair yards
+      // Line DOMINATED for the OFFENSE → blow-up tier (5..15), always — the
+      // line opened a hole regardless of how well the defense read the play.
       let minGain: number, maxGain: number;
-      if (!parent_match) {
+      if (line_dominated_offense) {
+        minGain = 5;
+        maxGain = 15;
+      } else if (!parent_match) {
         minGain = 5;
         maxGain = 25;
       } else if (!sub_match) {
@@ -154,14 +236,29 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
         minGain = 1;
         maxGain = 10;
       }
+      // LEAN regime → small yardage nudge (+3) when offense owns the line.
+      if (line_regime === 'lean' && line_winner === 'offense') {
+        maxGain += 3;
+      }
       yards = minGain + Math.floor(rng() * (maxGain - minGain + 1));
     } else if (defense_wins) {
+      // === Defense wins the skill roll (or line flipped it for defense) ===
       // Defense stops the play. On full mismatch this shouldn't happen, but if it does
       // (e.g. QB mod flipped the skill), still cap the loss.
       // Parent-match sub-mismatch: defense stops hard (-1..-4)
       // Full mismatch: minimal loss (-1..-2)
-      const maxLoss = parent_match ? 4 : 2;
+      // Line DOMINATED for the DEFENSE → blown-up play: bigger loss, no skill-roll escape hatch.
+      let maxLoss: number;
+      if (line_dominated_defense) {
+        maxLoss = 6; // blown up at the LOS
+      } else {
+        maxLoss = parent_match ? 4 : 2;
+      }
       yards = -(1 + Math.floor(rng() * maxLoss));
+      // LEAN regime → small yardage nudge (-2) when defense owns the line.
+      if (line_regime === 'lean' && line_winner === 'defense' && !line_dominated_defense) {
+        yards -= 2;
+      }
     }
     yards = applyYardsPct(yards, input.qb_off_modifiers, parent);
     // Cap yards at the remaining distance to the OFFENSE'S goal line so a play
@@ -182,6 +279,9 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
       const maxLoss = Math.abs(input.yardline_before - ownGoalYardline);
       if (-yards > maxLoss) yards = -Math.max(1, maxLoss);
     }
+  } else if (line_dominated_offense) {
+    // Turnover rolled AND offense owned the line — turnover text already
+    // covers it; nothing more to do here.
   }
 
   return {
@@ -191,6 +291,9 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
     sub_match,
     off_roll: 0,
     def_roll: 0,
+    line_winner,
+    line_roll_gap,
+    line_regime,
     turnover,
     turnover_chance,
     yards,

@@ -389,11 +389,15 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   // Run/Pass: standard resolvePlay
   const offSkill = offense.off_skill?.skill ?? 60;
   const defSkill = defense.def_skill?.skill ?? 60;
+  const offLineSkill = offense.o_line?.skill ?? 60;
+  const defLineSkill = defense.d_line?.skill ?? 60;
   // Direction is per-possession: team 0 → +1 (toward 100), team 1 → -1 (toward 0).
   const offense_direction = offenseDirection(game);
   const resolve = resolvePlay({
     off_skill: offSkill,
     def_skill: defSkill,
+    off_line_skill: offLineSkill,
+    def_line_skill: defLineSkill,
     off_play,
     def_play,
     off_audible,
@@ -505,7 +509,26 @@ function recapText(
 ): string {
   if (scoring === 'td') return `TOUCHDOWN! ${r.yards} yards.`;
   if (scoring === 'safety') return `SAFETY! Loss of ${Math.abs(r.yards)} yards.`;
+  // Turnover rolled — line play recap doesn't override it (fumble narrative).
   if (r.turnover) return `TURNOVER! (defense read it)`;
+  // Line dominated the outcome — frame it as a line play.
+  if (r.line_regime === 'dominate') {
+    if (r.line_winner === 'offense') {
+      return r.yards > 0
+        ? `LINE OPENS THE HOLE! Gain of ${r.yards}.`
+        : `LINE STILL LOSES ${Math.abs(r.yards)} despite winning the trench.`;
+    }
+    return r.yards < 0
+      ? `BLOWN UP BY THE LINE! Loss of ${Math.abs(r.yards)}.`
+      : `LINE OWNED THE TRENCH but gave up ${r.yards}.`;
+  }
+  if (r.line_regime === 'lean') {
+    const side = r.line_winner === 'offense' ? 'O-line' : 'D-line';
+    const verb = r.line_winner === 'offense'
+      ? (r.yards > 0 ? `pushes for ${r.yards}` : `holds to ${r.yards}`)
+      : `stops for ${r.yards}`;
+    return `${side} ${verb}.`;
+  }
   if (r.yards > 0) return `Gain of ${r.yards}.`;
   if (r.yards < 0) return `Loss of ${Math.abs(r.yards)}.`;
   return `No gain.`;

@@ -175,8 +175,11 @@ export default function Tutorial() {
               <em>Buffs only — never penalties.</em>
             </li>
             <li>
-              <strong>O_LINE / D_LINE</strong> — currently cosmetic
-              (no stat, just a persona). Keeps the draft pool rich.
+              <strong>O_LINE / D_LINE</strong> — the trench stat (50..100). When
+              the <em>gap</em> between the two lines crosses{' '}
+              <span className="chip">20</span>, the line roll fires on every
+              run/pass. Gap <span className="chip">40+</span> DOMINATES and
+              flips the outcome. See "The Trenches" below.
             </li>
             <li>
               <strong>OFF_SKILL / DEF_SKILL</strong> — the skill number rolled on
@@ -340,6 +343,75 @@ export default function Tutorial() {
             down. <strong>4th down</strong> with insufficient yards = turnover
             on downs (defense takes the ball at the LOS). Negative yards{' '}
             <em>increase</em> distance — bad for the offense.
+          </p>
+        </section>
+
+        {/* === TRENCHES === */}
+        <section className="panel-flash">
+          <div className="panel-titlebar">
+            <span>3b · The Trenches (O_LINE vs D_LINE)</span>
+            <span className="text-xs">New</span>
+          </div>
+          <p className="text-sm leading-snug">
+            Every run/pass play also runs a <strong>line roll</strong> when the
+            gap between O_LINE skill and D_LINE skill is wide enough. The line
+            roll decides the play <em>before</em> the skill rolls even start —
+            the trenches always have a say.
+          </p>
+
+          <h3 className="font-black mt-3 mb-1">Two regimes</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs md:text-sm border-2 border-ink">
+              <thead className="bg-sun text-ink">
+                <tr>
+                  <th className="text-left p-2">Regime</th>
+                  <th className="text-left p-2">Gap</th>
+                  <th className="text-left p-2">Effect</th>
+                </tr>
+              </thead>
+              <tbody className="bg-cream">
+                <tr className="border-t-2 border-ink">
+                  <td className="p-2 font-black">Lean</td>
+                  <td className="p-2">20..39</td>
+                  <td className="p-2">
+                    Yardage nudge: line winner gets <code>+3</code> on
+                    offense, <code>−2</code> on defense.
+                  </td>
+                </tr>
+                <tr className="border-t-2 border-ink/40">
+                  <td className="p-2 font-black">Dominate</td>
+                  <td className="p-2">≥ 40</td>
+                  <td className="p-2">
+                    Line winner <strong>flips the outcome</strong>. Offense
+                    dominates → <code>+5..+15</code> yards, no turnover.
+                    Defense dominates → <code>−1..−6</code> yards + bumped
+                    fumble rate.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 className="font-black mt-3 mb-1">Examples</h3>
+          <ul className="text-sm pl-4 list-disc space-y-1">
+            <li>
+              Defense wrong parent (auto-offense win), but D_LINE dominates
+              (gap 40+) → <strong>BLOWN UP BY THE LINE!</strong> Loss.
+            </li>
+            <li>
+              Defense perfect read, but O_LINE dominates (gap 40+) →{' '}
+              <strong>LINE OPENS THE HOLE!</strong> Gain of 5–15.
+            </li>
+            <li>
+              Lines are within 20 of each other → no rng calls, the existing
+              parent/sub math runs unchanged. Common plays stay normal.
+            </li>
+          </ul>
+
+          <p className="text-xs text-ink/70 mt-3">
+            The line roll fires on <strong>run and pass only</strong>. Punts and
+            field goals aren't decided in the trenches — they have their own
+            mechanics.
           </p>
         </section>
 
