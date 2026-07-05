@@ -84,14 +84,31 @@ HTTP `POST /api/sessions` and `/api/sessions/:id/join` write to SQLite. When the
 - `drawPlayer` size: QB=7px, others=6px. All have a black outline so they stand out against green.
 - `FIELD_W=800, FIELD_H=400, YARD=8` (8px per yard). Lines are `0..10` mapped to `0..800` px.
 
-### 10. tests — what works, what doesn't
-- 106 tests, stable across 5 consecutive runs.
+### 10. Audio architecture (Phase 8 — all generated via Web Audio API)
+- **Single AudioContext**, `initAudio()` once per page (call from any user click). All other modules call into the shared bus.
+- **4-channel mix bus** (`client/src/audio/_audioBus.ts`): Master / Music / Crowd / SFX. VolumePanel reads/writes these gains in [0,1]. Persists to localStorage `gridiron:audio_volumes`.
+- **Modules**:
+  - `_audioBus.ts` — context init, 4 gains, volume API, localStorage persistence. Exposes `__test` for tests.
+  - `synth.ts` — 20+ one-shot SFX (snap, thud, cheer, TD siren, FG bell/miss, turnover, **UI click, UI hover, scheme select, audible, draft pick, coin flip, possession change, down change, kickoff, victory, defeat, point scored, incomplete pass whistle, error**).
+  - `music.ts` — procedural chiptune engine (lead + bass + kick/snare/hat) with **5 tracks** (`draft`, `game`, `tense`, `victory`, `defeat`). Step sequencer at 25ms cadence. Crossfades between tracks over 500ms.
+  - `crowd.ts` — continuous ambient murmur (lowpass-filtered brown noise + LFO breath), plus synth DEFENSE/OFFENSE chants via formant-filtered square waves + vibrato.
+- **Wiring**:
+  - `usePhaseMusic(state, meId)` hook in `SessionRouter.tsx` picks the right track based on game phase. 3rd/4th down swaps to `tense`.
+  - Game screen starts ambient on mount + stops on unmount; plays DEFENSE/OFFENSE chant once when down hits 3+ (perspective-aware).
+  - Global click handler in `App.tsx` fires `playUiClick` on every `.btn-*` press + `playUiHover` on `[data-sfx="hover"]`.
+  - `VolumePanel.tsx` (replaces `MuteToggle.tsx`) — speaker toggle + popover with 3 sliders. Click speaker = open panel; double-click = master mute.
+- **Never** create an `AudioContext` outside `_audioBus.ts`. All sound modules route through `busFor(channel)` / `musicBus()` / `crowdBus()` so the panel can mute independently.
+- **Never** play a sound during render — gate everything in event handlers / useEffect. Web Audio browsers require user-gesture unlock.
+
+### 11. tests — what works, what doesn't
+- 231 tests, stable. (210 pre-audio + 21 audio = 231)
 - The `inside run vs deep pass` test asserts >80% positive yards — passes because mismatch auto-wins.
 - The `low-yard play advances down` test uses MATCHED parents with skill 1 vs 100 because mismatch auto-wins for offense (no negative yards possible).
 - The `FG made` test searches seeds 1..200 to find one that produces a make (it doesn't always make).
 - The `TD scores 1 point` test searches seeds for one where off_roll 100 > def_roll 50 at yardline 99 — only succeeds on specific seeds.
+- The CPU e2e test (`server/tests/cpu_e2e.test.ts`) is **timing-flaky** — it depends on a 5s setTimeout chain in `game_machine.ts`. Re-runs usually pass; if it fails, retry once. None of the audio work touches server code.
 
-### 11. Draft design
+### 12. Draft design
 - Free-group alternating turns: 12 picks, player 0 picks on even turns, player 1 on odd. On each turn the picker chooses ANY unpicked group.
 - Server validates: it's your turn (`pick_order[current_turn]`), you haven't already picked that group, option still in pool.
 - Client shows ALL groups + ALL pool options to both players at all times (visibility, not lock-step).

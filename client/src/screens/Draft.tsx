@@ -1,8 +1,10 @@
+import { useEffect, useRef } from 'react';
 import { EVENTS } from '../api/socket.js';
 import { PICK_ORDER } from '@gridiron/shared';
 import type { SessionSnapshot } from '../hooks/useSession.js';
 import { modifierDescription } from '@gridiron/shared';
 import FlashHeader from '../components/FlashHeader.js';
+import { initAudio, playDraftPick } from '../audio/synth.js';
 
 export default function Draft({
   state,
@@ -22,7 +24,18 @@ export default function Draft({
   const currentPickerName = state.players.find((p) => p.id === draft.current_picker_id)?.name ?? '?';
   const currentPickerIsCpu = (state.players.find((p) => p.id === draft.current_picker_id) as any)?.is_cpu === true;
 
+  // Draft pick chime — fires every time current_turn advances (i.e. someone,
+  // including the CPU, just registered a pick).
+  const prevTurnRef = useRef(draft.current_turn);
+  useEffect(() => {
+    if (draft.current_turn !== prevTurnRef.current) {
+      playDraftPick();
+      prevTurnRef.current = draft.current_turn;
+    }
+  }, [draft.current_turn]);
+
   function pick(group: string, optionId: string) {
+    initAudio();
     send(EVENTS.DRAFT_PICK, { group, option_id: optionId });
   }
 

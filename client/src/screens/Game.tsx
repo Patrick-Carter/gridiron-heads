@@ -18,7 +18,13 @@ import {
   playFgBell,
   playFgMiss,
   playTurnover,
+  playPossessionChange,
+  playDownChange,
+  playPointScored,
+  playIncomplete,
+  playKickoff,
 } from '../audio/synth.js';
+import { startAmbient, stopAmbient, playDefenseChant, playOffenseChant } from '../audio/crowd.js';
 import type { SessionSnapshot } from '../hooks/useSession.js';
 import { ballSpot, type Play } from '@gridiron/shared';
 
@@ -64,11 +70,13 @@ export default function Game({
       const r = lastPlayResult;
       if (r.scoring_event === 'td') {
         playTdSiren();
-        setTimeout(() => playCheer(1.5), 200);
+        setTimeout(() => playPointScored(), 350);
+        setTimeout(() => playCheer(1.5), 500);
         setConfettiKey((k) => k + 1);
       } else if (r.scoring_event === 'fg') {
         playFgBell();
-        setTimeout(() => playCheer(0.6), 150);
+        setTimeout(() => playPointScored(), 200);
+        setTimeout(() => playCheer(0.6), 350);
         setConfettiKey((k) => k + 1);
       } else if (r.scoring_event === 'safety') {
         playFgMiss();
@@ -77,14 +85,70 @@ export default function Game({
       } else if (r.turnover && !r.scoring_event) {
         playTurnover();
         setTimeout(() => playCheer(0.4), 100);
+      } else if (r.off_call?.parent === 'pass' && r.yards === 0 && !r.turnover) {
+        // Incomplete pass — 3 whistle peeps
+        playIncomplete();
       } else {
         // Routine play — light thud + small cheer (volume scales with yards)
         const intensity = Math.min(1.2, Math.abs(r.yards ?? 0) / 20 + 0.2);
         playThud(intensity);
         setTimeout(() => playCheer(intensity * 0.4), 80);
+        // Kickoff thunk on punt plays
+        if (r.off_call?.parent === 'punt') {
+          setTimeout(() => playKickoff(), 120);
+        }
       }
     }
   }, [lastPlayResult?.seed]);
+
+  // Ambient crowd bed — start on Game mount, stop on unmount.
+  useEffect(() => {
+    startAmbient();
+    return () => stopAmbient();
+  }, []);
+
+  // Track possession + down changes for audio cues. We watch the game state
+  // refs so this only re-runs when those specific values change.
+  const prevPossessionRef = useRef(game.possession_idx);
+  const prevDownRef = useRef(game.down);
+  useEffect(() => {
+    if (prevPossessionRef.current !== game.possession_idx) {
+      playPossessionChange();
+      prevPossessionRef.current = game.possession_idx;
+    }
+  }, [game.possession_idx]);
+  useEffect(() => {
+    if (prevDownRef.current !== game.down) {
+      playDownChange();
+      prevDownRef.current = game.down;
+    }
+  }, [game.down]);
+
+  // "DEFENSE!" chant on 3rd/4th down (fires once when down reaches 3 or 4
+  // while a play is in progress / being read).
+  const prevDefChantDownRef = useRef<number | null>(null);
+  useEffect(() => {
+    const activePhase =
+      game.phase === 'awaiting_schemes' ||
+      game.phase === 'ready_to_snap' ||
+      game.phase === 'awaiting_def_response';
+    if (
+      activePhase &&
+      game.down >= 3 &&
+      prevDefChantDownRef.current !== game.down
+    ) {
+      // Only the DEFENDING player should hear the DEFENSE chant; the offense
+      // hears the OFFENSE chant instead.
+      if (myIdx !== game.possession_idx) {
+        playDefenseChant();
+      } else {
+        playOffenseChant();
+      }
+      prevDefChantDownRef.current = game.down;
+    } else if (!activePhase) {
+      prevDefChantDownRef.current = null;
+    }
+  }, [game.down, game.phase, game.possession_idx, myIdx]);
 
   function handleAnimationDone() {
     setIsAnimating(false);

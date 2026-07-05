@@ -1,4 +1,4 @@
-import MuteToggle from './MuteToggle.js';
+import VolumePanel from './VolumePanel.js';
 
 export default function ScorePanel({
   scores,
@@ -15,7 +15,7 @@ export default function ScorePanel({
         <span>Scoreboard</span>
         <span className="text-xs flex items-center gap-2">
           <span>First to 3 (win by 2)</span>
-          <MuteToggle />
+          <VolumePanel />
         </span>
       </div>
       <div className="grid grid-cols-2 gap-3">

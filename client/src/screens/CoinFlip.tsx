@@ -1,8 +1,17 @@
+import { useEffect } from 'react';
 import type { SessionSnapshot } from '../hooks/useSession.js';
 import FlashHeader from '../components/FlashHeader.js';
+import { initAudio, playCoinFlip } from '../audio/synth.js';
 
 export default function CoinFlip({ state, meId }: { state: SessionSnapshot; meId: string }) {
   const result = state.coin_result;
+
+  // Coin landed — play the cha-ching once when this screen mounts.
+  useEffect(() => {
+    initAudio();
+    playCoinFlip();
+  }, []);
+
   const iAmFirst = state.first_possession_id === meId;
   return (
     <div className="min-h-full flex flex-col items-center justify-center p-4 relative">

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Play, PlaySub } from '@gridiron/shared';
 import { flipSubtype } from '@gridiron/shared';
+import { initAudio, playAudible } from '../audio/synth.js';
 
 export default function AudiblePanel({
   role,
@@ -38,14 +39,14 @@ export default function AudiblePanel({
           <div className="grid grid-cols-2 gap-2">
             <button
               disabled={!realLeft}
-              onClick={() => setShowPicker(true)}
+              onClick={() => { initAudio(); playAudible(); setShowPicker(true); }}
               className={`btn-flash ${realLeft ? 'btn-danger' : '!bg-cream/40 !text-ink/40'}`}
             >
               🗣 Audible{!realLeft && ' (used)'}
             </button>
             <button
               disabled={!fakeLeft}
-              onClick={onFakeAudible}
+              onClick={() => { initAudio(); playAudible(); onFakeAudible?.(); }}
               className={`btn-flash ${fakeLeft ? 'btn-cool' : '!bg-cream/40 !text-ink/40'}`}
             >
               🎭 Fake{!fakeLeft && ' (used)'}
@@ -74,7 +75,7 @@ export default function AudiblePanel({
         </div>
         <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={onDefStay}
+            onClick={() => { initAudio(); onDefStay?.(); }}
             className="btn-flash btn-ghost"
           >
             🛡 Stay
@@ -82,7 +83,7 @@ export default function AudiblePanel({
           {currentPlay && (
             <AudibleSubPicker
               currentSub={currentPlay.sub}
-              onPick={(s) => onDefAudible?.(s)}
+              onPick={(s) => { initAudio(); onDefAudible?.(s); }}
               label="Respond"
             />
           )}

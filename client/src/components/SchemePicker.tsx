@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { PlayParent, PlaySub } from '@gridiron/shared';
+import { initAudio, playSchemeSelect } from '../audio/synth.js';
 
 const SUB_OPTIONS: Record<PlayParent, PlaySub[]> = {
   run: ['inside', 'outside'],
@@ -22,8 +23,16 @@ export default function SchemePicker({
   const needsSub = subs.length > 0;
 
   function selectParent(p: PlayParent) {
+    initAudio();
+    playSchemeSelect();
     setParent(p);
     setSub(SUB_OPTIONS[p][0] ?? ('inside' as PlaySub));
+  }
+
+  function selectSub(s: PlaySub) {
+    initAudio();
+    playSchemeSelect();
+    setSub(s);
   }
 
   return (
@@ -51,7 +60,7 @@ export default function SchemePicker({
             <button
               key={s}
               disabled={disabled}
-              onClick={() => setSub(s)}
+              onClick={() => selectSub(s)}
               className={`btn-flash !min-h-0 py-2 text-sm ${
                 sub === s ? 'btn-cool' : 'btn-ghost'
               } ${disabled ? 'opacity-50' : ''}`}
@@ -64,7 +73,7 @@ export default function SchemePicker({
 
       <button
         disabled={disabled}
-        onClick={() => onPick(parent, sub)}
+        onClick={() => { initAudio(); onPick(parent, sub); }}
         className="btn-flash btn-xtra btn-go w-full"
       >
         🔒 Lock In!

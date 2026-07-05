@@ -1,62 +1,40 @@
 // Web Audio synth — no asset deps, no frameworks.
 //
-// Synthesizes the game-feel sound effects: whistle snap, thud, crowd cheer,
-// TD siren, FG bell, FG miss. All generated procedurally with oscillators +
-// noise + filters. Volume scales with play gain.
-//
-// Usage:
-//   import { initAudio, playSnap, setMuted, isMuted } from '../audio/synth.js';
-//   // in a useEffect on first user interaction:
-//   initAudio();
-//   // in event handlers:
-//   playSnap();
-//   playThud(yardsGained);
+// All game sound effects via oscillators + noise + filters. Routes through
+// the shared 4-bus mix (Master / Music / Crowd / SFX) defined in
+// `_audioBus.ts`. See that file for the volume API and persistence.
 //
 // Browsers require user interaction before AudioContext can play. Call
 // `initAudio()` from a click handler to "unlock" the context.
 
-let ctx: AudioContext | null = null;
-let masterGain: GainNode | null = null;
-let muted = false;
+import {
+  ensureRunning as _ensureRunning,
+  busFor,
+  isAudioReady,
+  initAudio,
+  setVolume,
+  setVolumes,
+  getVolumes,
+  setMuted,
+  isMuted,
+  type Channel,
+  type Volumes,
+} from './_audioBus.js';
 
-/** Create the AudioContext (call from a user click handler). */
-export function initAudio(): void {
-  if (ctx) return;
-  try {
-    const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
-    if (!AC) return;
-    const newCtx = new AC();
-    const gain = newCtx.createGain();
-    gain.gain.value = muted ? 0 : 0.6;
-    gain.connect(newCtx.destination);
-    ctx = newCtx;
-    masterGain = gain;
-  } catch {
-    ctx = null;
-    masterGain = null;
-  }
+export type { Channel, Volumes };
+
+/** Create the AudioContext. Idempotent. Must be called from a user gesture. */
+export function ensureAudio(): void {
+  initAudio();
 }
 
-/** Mute/unmute. Persists across plays. */
-export function setMuted(v: boolean): void {
-  muted = v;
-  if (masterGain && ctx) {
-    masterGain.gain.value = v ? 0 : 0.6;
-  }
+/** True if AudioContext has been initialized. */
+export function audioReady(): boolean {
+  return isAudioReady();
 }
 
-export function isMuted(): boolean {
-  return muted;
-}
-
-/** Internal helper: ensure ctx is resumed (some browsers suspend until user interaction). */
-function ensureRunning(): AudioContext | null {
-  if (!ctx) return null;
-  if (ctx.state === 'suspended') {
-    ctx.resume().catch(() => {});
-  }
-  return ctx;
-}
+// Back-compat alias used in older call sites (and MuteToggle path).
+export { initAudio, setVolume, setVolumes, getVolumes, setMuted, isMuted };
 
 /** Envelope helper: ramp gain over time. */
 function env(
@@ -67,14 +45,14 @@ function env(
   decay: number,
   end: number,
 ) {
-  if (!ctx) return;
+  if (!gain.context) return;
   gain.gain.setValueAtTime(0, start);
   gain.gain.linearRampToValueAtTime(peak, start + attack);
   gain.gain.linearRampToValueAtTime(0.0001, start + attack + decay);
   gain.gain.setValueAtTime(0, end);
 }
 
-/** Play a single oscillator tone with a simple envelope. */
+/** Play a single oscillator tone with a simple envelope on a channel. */
 function playTone(
   freq: number,
   durationMs: number,
@@ -82,9 +60,11 @@ function playTone(
   peak = 0.4,
   attackMs = 5,
   decayMs?: number,
+  channel: Channel = 'sfx',
 ) {
-  const c = ensureRunning();
-  if (!c || !masterGain) return;
+  const c = _ensureRunning();
+  const bus = busFor(channel);
+  if (!c || !bus) return;
   const osc = c.createOscillator();
   const g = c.createGain();
   osc.type = type;
@@ -95,59 +75,68 @@ function playTone(
   const decay = (decayMs ?? durationMs - attackMs) / 1000;
   env(g, now, peak, attack, decay, now + dur);
   osc.connect(g);
-  g.connect(masterGain);
+  g.connect(bus);
   osc.start(now);
   osc.stop(now + dur + 0.05);
 }
 
-/** Play a noise burst with bandpass filter — for "thud" and "crowd" effects. */
-function playNoise(durationMs: number, peak: number, filterFreq: number, filterQ = 1) {
-  const c = ensureRunning();
-  if (!c || !masterGain) return;
-  const bufferSize = Math.floor(c.sampleRate * (durationMs / 1000));
+/** Noise burst with bandpass/highpass filter. */
+function playNoise(
+  durationMs: number,
+  peak: number,
+  filterFreq: number,
+  filterQ = 1,
+  filterType: BiquadFilterType = 'bandpass',
+  channel: Channel = 'sfx',
+) {
+  const c = _ensureRunning();
+  const bus = busFor(channel);
+  if (!c || !bus) return;
+  const bufferSize = Math.max(1, Math.floor(c.sampleRate * (durationMs / 1000)));
   const buf = c.createBuffer(1, bufferSize, c.sampleRate);
   const data = buf.getChannelData(0);
   for (let i = 0; i < bufferSize; i++) {
-    data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize); // decay
+    data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
   }
   const src = c.createBufferSource();
   src.buffer = buf;
   const filt = c.createBiquadFilter();
-  filt.type = 'bandpass';
+  filt.type = filterType;
   filt.frequency.value = filterFreq;
   filt.Q.value = filterQ;
   const g = c.createGain();
   env(g, c.currentTime, peak, 0.005, durationMs / 1000 - 0.01, c.currentTime + durationMs / 1000);
   src.connect(filt);
   filt.connect(g);
-  g.connect(masterGain);
+  g.connect(bus);
   src.start();
 }
 
-// === Public effect API ========================================================
+// === Public SFX API ===========================================================
 
-/** Sharp whistle-snap: high triangle burst. */
+// === Existing gameplay sounds (kept stable — Game.tsx already calls these) ===
+
+/** Sharp whistle-snap: high triangle burst + hiss. */
 export function playSnap(): void {
   playTone(1800, 80, 'triangle', 0.35, 1, 70);
   playNoise(60, 0.2, 3000, 4);
 }
 
-/** Thud on a tackle/loss: low noise burst. Intensity scales with yards lost. */
+/** Thud on a tackle/loss. Intensity scales with yards lost. */
 export function playThud(intensity = 1): void {
   playTone(60, 120, 'sine', 0.3 * intensity, 2, 100);
   playNoise(120, 0.4 * intensity, 200, 0.7);
 }
 
-/** Crowd cheer for big plays. Duration + volume scales with gain. */
+/** Crowd cheer for big plays. Layered noise + lowpass sweep. */
 export function playCheer(intensity = 1): void {
-  const c = ensureRunning();
-  if (!c || !masterGain) return;
-  // Layered noise + lowpass sweep for "crowd roar"
-  const bufferSize = Math.floor(c.sampleRate * (0.6 + 0.4 * intensity));
+  const c = _ensureRunning();
+  const bus = busFor('crowd');
+  if (!c || !bus) return;
+  const bufferSize = Math.max(1, Math.floor(c.sampleRate * (0.6 + 0.4 * intensity)));
   const buf = c.createBuffer(1, bufferSize, c.sampleRate);
   const data = buf.getChannelData(0);
   for (let i = 0; i < bufferSize; i++) {
-    // Random noise shaped with a quick rise + slow decay
     const env = Math.sin((i / bufferSize) * Math.PI);
     data[i] = (Math.random() * 2 - 1) * env;
   }
@@ -159,19 +148,19 @@ export function playCheer(intensity = 1): void {
   filt.frequency.linearRampToValueAtTime(2200, c.currentTime + 0.3 * intensity);
   filt.Q.value = 2;
   const g = c.createGain();
-  env(g, c.currentTime, 0.35 * Math.min(1.5, intensity), 0.05, 0.6, c.currentTime + bufferSize / c.sampleRate);
+  env(g, c.currentTime, 0.45 * Math.min(1.5, intensity), 0.05, 0.6, c.currentTime + bufferSize / c.sampleRate);
   src.connect(filt);
   filt.connect(g);
-  g.connect(masterGain);
+  g.connect(bus);
   src.start();
 }
 
 /** TD siren: classic sawtooth arpeggio rising in pitch. */
 export function playTdSiren(): void {
-  const c = ensureRunning();
-  if (!c || !masterGain) return;
+  const c = _ensureRunning();
+  const bus = busFor('sfx');
+  if (!c || !bus) return;
   const now = c.currentTime;
-  // Three ascending tones
   const notes = [440, 554, 659, 880];
   for (let i = 0; i < notes.length; i++) {
     const t = now + i * 0.12;
@@ -181,7 +170,7 @@ export function playTdSiren(): void {
     osc.frequency.value = notes[i];
     env(g, t, 0.3, 0.01, 0.18, t + 0.2);
     osc.connect(g);
-    g.connect(masterGain);
+    g.connect(bus);
     osc.start(t);
     osc.stop(t + 0.25);
   }
@@ -199,10 +188,11 @@ export function playFgMiss(): void {
   playTone(120, 180, 'sawtooth', 0.2, 5, 160);
 }
 
-/** Conversion turnover-on-downs: descending tones. */
+/** Turnover: descending tones. */
 export function playTurnover(): void {
-  const c = ensureRunning();
-  if (!c || !masterGain) return;
+  const c = _ensureRunning();
+  const bus = busFor('sfx');
+  if (!c || !bus) return;
   const now = c.currentTime;
   const notes = [440, 370, 294];
   for (let i = 0; i < notes.length; i++) {
@@ -213,8 +203,173 @@ export function playTurnover(): void {
     osc.frequency.value = notes[i];
     env(g, t, 0.25, 0.005, 0.1, t + 0.12);
     osc.connect(g);
-    g.connect(masterGain);
+    g.connect(bus);
     osc.start(t);
     osc.stop(t + 0.15);
   }
+}
+
+// === New arcade-density SFX =================================================
+
+/** Crisp UI click — fired globally on every .btn-* press. */
+export function playUiClick(): void {
+  playTone(880, 35, 'square', 0.18, 1, 30);
+  playNoise(20, 0.06, 4000, 2);
+}
+
+/** Soft hover tick — triggered from data-sfx="hover" elements. */
+export function playUiHover(): void {
+  playTone(1400, 15, 'sine', 0.07, 1, 12);
+}
+
+/** Scheme parent/sub selection — short two-note "bing". */
+export function playSchemeSelect(): void {
+  playTone(660, 50, 'square', 0.22, 1, 45);
+  setTimeout(() => playTone(990, 50, 'square', 0.18, 1, 45), 50);
+}
+
+/** Audible called — sharp warning klaxon. */
+export function playAudible(): void {
+  const c = _ensureRunning();
+  const bus = busFor('sfx');
+  if (!c || !bus) return;
+  const now = c.currentTime;
+  for (const t of [0, 0.08]) {
+    const freq = t === 0 ? 720 : 480;
+    const osc = c.createOscillator();
+    const g = c.createGain();
+    osc.type = 'square';
+    osc.frequency.value = freq;
+    env(g, now + t, 0.28, 0.005, 0.08, now + t + 0.1);
+    osc.connect(g);
+    g.connect(bus);
+    osc.start(now + t);
+    osc.stop(now + t + 0.12);
+  }
+}
+
+/** Draft pick registered — bright success chime. */
+export function playDraftPick(): void {
+  playTone(523, 60, 'triangle', 0.28, 1, 55);
+  setTimeout(() => playTone(784, 90, 'triangle', 0.24, 1, 80), 60);
+  setTimeout(() => playTone(1047, 140, 'triangle', 0.22, 1, 130), 150);
+}
+
+/** Coin flip landed — metallic cha-ching. */
+export function playCoinFlip(): void {
+  playTone(1320, 40, 'square', 0.25, 1, 35);
+  setTimeout(() => playTone(1760, 40, 'square', 0.22, 1, 35), 40);
+  setTimeout(() => playTone(2200, 90, 'square', 0.18, 1, 80), 80);
+}
+
+/** Possession change — whoosh + small crowd swell. */
+export function playPossessionChange(): void {
+  const c = _ensureRunning();
+  const bus = busFor('sfx');
+  if (!c || !bus) return;
+  const now = c.currentTime;
+  const osc = c.createOscillator();
+  const g = c.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(380, now);
+  osc.frequency.exponentialRampToValueAtTime(140, now + 0.35);
+  env(g, now, 0.22, 0.01, 0.35, now + 0.4);
+  osc.connect(g);
+  g.connect(bus);
+  osc.start(now);
+  osc.stop(now + 0.42);
+  setTimeout(() => playCheer(0.5), 200);
+}
+
+/** Down / distance updated — quick muted tick. */
+export function playDownChange(): void {
+  playTone(420, 30, 'sine', 0.12, 1, 25);
+}
+
+/** Point scored bump (paired with TD/FG/safety specific sounds). */
+export function playPointScored(): void {
+  playTone(880, 60, 'triangle', 0.22, 1, 55);
+  setTimeout(() => playTone(1320, 120, 'triangle', 0.2, 1, 110), 70);
+}
+
+/** Victory fanfare — major-key ascending C-E-G-C with held final note. */
+export function playVictory(): void {
+  const c = _ensureRunning();
+  const bus = busFor('sfx');
+  if (!c || !bus) return;
+  const now = c.currentTime;
+  const notes: [number, number][] = [
+    [523, 0.18], [659, 0.18], [784, 0.18], [1047, 0.7],
+  ];
+  let t = now;
+  for (const [freq, dur] of notes) {
+    for (const detune of [0, 4]) {
+      const osc = c.createOscillator();
+      const g = c.createGain();
+      osc.type = 'triangle';
+      osc.frequency.value = freq * (1 + detune / 1200);
+      env(g, t, 0.28, 0.01, dur - 0.02, t + dur);
+      osc.connect(g);
+      g.connect(bus);
+      osc.start(t);
+      osc.stop(t + dur + 0.05);
+    }
+    t += dur * 0.7;
+  }
+}
+
+/** Defeat sting — descending minor sigh. */
+export function playDefeat(): void {
+  const c = _ensureRunning();
+  const bus = busFor('sfx');
+  if (!c || !bus) return;
+  const now = c.currentTime;
+  const notes: [number, number][] = [
+    [392, 0.2], [330, 0.25], [262, 0.7],
+  ];
+  let t = now;
+  for (const [freq, dur] of notes) {
+    const osc = c.createOscillator();
+    const g = c.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    env(g, t, 0.25, 0.02, dur - 0.04, t + dur);
+    osc.connect(g);
+    g.connect(bus);
+    osc.start(t);
+    osc.stop(t + dur + 0.05);
+    t += dur * 0.85;
+  }
+}
+
+/** Kickoff / punt thunk — deep drum hit. */
+export function playKickoff(): void {
+  const c = _ensureRunning();
+  const bus = busFor('sfx');
+  if (!c || !bus) return;
+  const now = c.currentTime;
+  const osc = c.createOscillator();
+  const g = c.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(160, now);
+  osc.frequency.exponentialRampToValueAtTime(40, now + 0.2);
+  env(g, now, 0.4, 0.005, 0.2, now + 0.25);
+  osc.connect(g);
+  g.connect(bus);
+  osc.start(now);
+  osc.stop(now + 0.28);
+  playNoise(15, 0.15, 1500, 3);
+}
+
+/** Incomplete pass whistle — 3 short high peeps. */
+export function playIncomplete(): void {
+  for (let i = 0; i < 3; i++) {
+    setTimeout(() => playTone(1500, 40, 'triangle', 0.22, 1, 35), i * 110);
+  }
+}
+
+/** Error / wrong-action buzz. */
+export function playError(): void {
+  playTone(220, 90, 'square', 0.22, 2, 80);
+  playTone(180, 90, 'square', 0.18, 2, 80);
 }
