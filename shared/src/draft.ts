@@ -15,6 +15,18 @@ function rollSkill(rng: () => number): number {
   return 50 + Math.floor(rng() * 51); // 50..100 inclusive
 }
 
+// === Per-group gap caps =====================================================
+// Skill groups (OFF/DEF skill, kicker) use the standard 25% gap — draft
+// variety is more important here because the gap doesn't decide a play
+// head-to-head.
+//
+// LINE groups (O_LINE / D_LINE) use a tighter 15% cap because they roll
+// head-to-head every play: a wider cross-team gap lets the better line
+// dominate ~30%+ of plays, which feels oppressive in playtesting. 15% keeps
+// the lines competitive while still rewarding a better draft pick.
+export const SKILL_GROUP_GAP_CAP = 0.25;
+export const LINE_GROUP_GAP_CAP = 0.15;
+
 /** Slug for an option id; spaces→underscores so it stays filesystem/url-safe.
  *  Includes the attempt counter so the same name picked twice in a draft
  *  (rare, since the pool is consumed index-by-index, but possible) gets
@@ -23,19 +35,22 @@ function nameSlug(name: string, group: PositionGroup, attempt: number): string {
   return `${group}_${name.replace(/\s+/g, '_')}_${attempt}`;
 }
 
-/** Generate a pair of skill options within 25% gap. Names come from the
- *  group-specific fun-name pool (D026) — drawn deterministically so the
- *  draft_seed fully determines who shows up. */
+/** Generate a pair of skill options within the group's gap cap. Names come
+ *  from the group-specific fun-name pool (D026) — drawn deterministically so
+ *  the draft_seed fully determines who shows up. */
 function pairWithCap(
   rng: () => number,
   group: PositionGroup,
 ): [PositionOption, PositionOption] {
+  const cap = (group === 'O_LINE' || group === 'D_LINE')
+    ? LINE_GROUP_GAP_CAP
+    : SKILL_GROUP_GAP_CAP;
   for (let attempt = 0; attempt < 100; attempt++) {
     const a = rollSkill(rng);
     const b = rollSkill(rng);
     const lo = Math.min(a, b);
     const hi = Math.max(a, b);
-    if (hi === 0 || (hi - lo) / hi <= 0.25) {
+    if (hi === 0 || (hi - lo) / hi <= cap) {
       // Two distractor rng() calls so the names are tied to the slot, not
       // the skill pair — keeps draft seed reproducible even if the skill
       // pair regenerates across iterations of the outer loop.
@@ -47,7 +62,7 @@ function pairWithCap(
       ];
     }
   }
-  throw new Error(`could not satisfy 25% cap for ${group} after 100 attempts`);
+  throw new Error(`could not satisfy ${cap * 100}% cap for ${group} after 100 attempts`);
 }
 
 export type DraftPool = Record<PositionGroup, (PositionOption | QBOption)[]>;

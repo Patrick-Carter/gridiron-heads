@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { generateDraft, PICK_ORDER, PICKS_PER_TEAM, TOTAL_PICKS } from '../src/draft.js';
+import {
+  generateDraft,
+  PICK_ORDER,
+  PICKS_PER_TEAM,
+  TOTAL_PICKS,
+  SKILL_GROUP_GAP_CAP,
+  LINE_GROUP_GAP_CAP,
+} from '../src/draft.js';
 import { mulberry32 } from '../src/rng.js';
 
 describe('generateDraft', () => {
@@ -14,7 +21,7 @@ describe('generateDraft', () => {
     expect(pool.QB).toHaveLength(3);
   });
 
-  it('every skill pair satisfies the 25% gap cap', () => {
+  it('every skill pair satisfies its group\'s gap cap (skill 25%, line 15%)', () => {
     for (let seed = 0; seed < 200; seed++) {
       const rng = mulberry32(seed + 1);
       const pool = generateDraft(rng);
@@ -23,11 +30,44 @@ describe('generateDraft', () => {
         const hi = Math.max(a.skill, b.skill);
         const lo = Math.min(a.skill, b.skill);
         const gap = (hi - lo) / hi;
-        expect(gap).toBeLessThanOrEqual(0.25 + 1e-9);
+        const cap = (group === 'D_LINE' || group === 'O_LINE')
+          ? LINE_GROUP_GAP_CAP
+          : SKILL_GROUP_GAP_CAP;
+        expect(gap).toBeLessThanOrEqual(cap + 1e-9);
         expect(a.skill).toBeGreaterThanOrEqual(50);
         expect(b.skill).toBeLessThanOrEqual(100);
       }
     }
+  });
+
+  it('LINE groups use a tighter cap (15%) than SKILL groups (25%)', () => {
+    // Sanity: the LINE cap should be stricter than the SKILL cap so the
+    // head-to-head trench roll doesn't get dominated by a 25% gap.
+    expect(LINE_GROUP_GAP_CAP).toBeLessThanOrEqual(SKILL_GROUP_GAP_CAP);
+    // 15% is the chosen value — if you change it, update this assertion
+    // AND the comment in draft.ts explaining why.
+    expect(LINE_GROUP_GAP_CAP).toBe(0.15);
+  });
+
+  it('cross-team line gap is bounded: worst case within LINE_GROUP_GAP_CAP', () => {
+    // Both players pull O_LINE / D_LINE from the SAME 2-option pool. Worst
+    // case = one player takes hi, the other takes lo → gap = (hi - lo) / hi.
+    // Because the pool itself is capped at LINE_GROUP_GAP_CAP, the cross-team
+    // gap CANNOT exceed LINE_GROUP_GAP_CAP regardless of which player picks
+    // which option. Verify across many seeds.
+    let maxGap = 0;
+    for (let seed = 0; seed < 500; seed++) {
+      const rng = mulberry32(seed + 1);
+      const pool = generateDraft(rng);
+      for (const group of ['D_LINE', 'O_LINE'] as const) {
+        const [a, b] = pool[group] as Array<{ skill: number }>;
+        const hi = Math.max(a.skill, b.skill);
+        const lo = Math.min(a.skill, b.skill);
+        const gap = (hi - lo) / hi;
+        if (gap > maxGap) maxGap = gap;
+      }
+    }
+    expect(maxGap).toBeLessThanOrEqual(LINE_GROUP_GAP_CAP + 1e-9);
   });
 
   it('1000 generations → no throws', () => {

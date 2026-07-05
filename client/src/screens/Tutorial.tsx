@@ -191,6 +191,14 @@ export default function Tutorial() {
             </li>
           </ul>
           <p className="text-xs mt-3 text-ink/70">
+            <strong>Draft gap cap:</strong> within each pool the two options
+            are capped so they stay competitive. Skill groups cap at{' '}
+            <span className="chip">25%</span>; line groups cap tighter at{' '}
+            <span className="chip">15%</span> — since they roll head-to-head
+            every play, a tighter cap keeps the trenches from being
+            oppressive.
+          </p>
+          <p className="text-xs mt-1 text-ink/70">
             On each turn you can pick <em>any unpicked group</em>. The QB pool
             draws 3 random QBs out of 22 every game — pool-of-22 keeps
             re-drafts fresh.
