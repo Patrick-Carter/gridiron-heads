@@ -2,6 +2,7 @@
 //
 // Sits in the right column of the 2-col section below the canvas, next to
 // the play call panel. Renders:
+//   ┌─ OFF: RUN INSIDE  vs  DEF: PASS DEEP ─┐  (calls row — what each side picked)
 //   ┌─ Skill matchup rect ─┐  ┌─ Line matchup rect ─┐
 //   │ OFF 28/64 < DEF 47/70│  │ O-LINE 72/99 > D-LINE 54/84 │
 //   └──────────────────────┘  └──────────────────────────┘
@@ -34,14 +35,13 @@ const CHIP_MAROON = 'chip !bg-maroon !text-cream text-xs';
 const CHIP_NEUTRAL = 'chip !bg-cream !text-ink text-xs';
 
 /** Pad a number to 2 digits so the flip-in animations don't jitter the layout. */
-function pad2(n: number | undefined | null): string {
-  if (n == null) return '--';
+function pad2(n: number): string {
   return String(Math.max(0, Math.floor(n))).padStart(2, '0');
 }
 
 /** Decide the comparison symbol between two rolls.
  *  Returns '>' if off > def, '<' if def > off, '=' if equal. null when both
- *  are zero (parent mismatch — offense auto-wins, no roll fired). */
+ *  are zero (parent mismatch — offense auto-wins). */
 function compareSymbol(offRoll: number, defRoll: number): '>' | '<' | '=' | null {
   if (offRoll === 0 && defRoll === 0) return null;
   if (offRoll > defRoll) return '>';
@@ -79,14 +79,11 @@ function toneClass(tone: 'good' | 'bad' | 'neutral'): string {
 interface MatchupRectProps {
   testId: string;
   offLabel: string;
-  offRoll: number | undefined;
-  offBound: number | undefined;
+  offRoll: number;
+  offBound: number;
   defLabel: string;
-  defRoll: number | undefined;
-  defBound: number | undefined;
-  /** When true (parent mismatch auto-win), render em-dashes for the rolls and
-   *  force the symbol to '>' since the offense is credited with the win. */
-  forceOffWins?: boolean;
+  defRoll: number;
+  defBound: number;
   visible: boolean;
   ringColor: string;
   /** Background tint of the rect's chip row. */
@@ -107,7 +104,6 @@ function MatchupRect({
   defLabel,
   defRoll,
   defBound,
-  forceOffWins,
   visible,
   ringColor,
   offChipClass,
@@ -115,12 +111,9 @@ function MatchupRect({
 }: MatchupRectProps) {
   const offChip = offChipClass ?? CHIP_LIME;
   const defChip = defChipClass ?? CHIP_MAROON;
-  const symbol =
-    forceOffWins
-      ? '>'
-      : compareSymbol(offRoll ?? 0, defRoll ?? 0) ?? '>';
-  const offRollText = forceOffWins ? '—' : pad2(offRoll);
-  const defRollText = forceOffWins ? '—' : pad2(defRoll);
+  const symbol = compareSymbol(offRoll, defRoll) ?? '>';
+  const offRollText = pad2(offRoll);
+  const defRollText = pad2(defRoll);
   return (
     <div
       className={`${RECT} transition-all duration-200 ${visible ? '' : RECT_HIDDEN}`}
@@ -130,7 +123,7 @@ function MatchupRect({
       <div className="flex items-center gap-2 font-black tabular-nums text-sm w-full justify-center flex-wrap">
         <span className={offChip}>{offLabel}</span>
         <span data-testid={`${testId}-off`}>
-          {offRollText}<span className="text-ink/50">/{offBound ?? '--'}</span>
+          {offRollText}<span className="text-ink/50">/{offBound}</span>
         </span>
         <span
           className="text-2xl leading-none"
@@ -140,7 +133,7 @@ function MatchupRect({
           {symbol}
         </span>
         <span data-testid={`${testId}-def`}>
-          {defRollText}<span className="text-ink/50">/{defBound ?? '--'}</span>
+          {defRollText}<span className="text-ink/50">/{defBound}</span>
         </span>
         <span className={defChip}>{defLabel}</span>
       </div>
@@ -229,6 +222,25 @@ function ResultCard({ p, visible }: { p: PlayResult; visible: boolean }) {
   );
 }
 
+// === Calls row =============================================================
+
+function CallsRow({ p }: { p: PlayResult }) {
+  return (
+    <div
+      className="flex items-center justify-center gap-2 mt-1 text-xs font-black flex-wrap"
+      data-testid="calls-row"
+    >
+      <span className="chip !bg-lime !text-ink">
+        OFF: {p.off_call.parent.toUpperCase()} {p.off_call.sub.toUpperCase()}
+      </span>
+      <span className="text-ink/60 font-black">vs</span>
+      <span className="chip !bg-maroon !text-cream">
+        DEF: {p.def_call.parent.toUpperCase()} {p.def_call.sub.toUpperCase()}
+      </span>
+    </div>
+  );
+}
+
 // === Top-level component ===================================================
 
 export default function ResultsPanel({
@@ -247,12 +259,6 @@ export default function ResultsPanel({
   const vResult = !isLive || progress >= 0.70;
 
   const verdict = playResult ? verdictText(playResult) : null;
-  // Detect parent-mismatch auto-win: both skill rolls are 0.
-  const mismatchAutoWin =
-    !!playResult &&
-    !playResult.parent_match &&
-    (playResult.off_roll ?? 0) === 0 &&
-    (playResult.def_roll ?? 0) === 0;
 
   return (
     <div className="panel-flash" data-testid="results-panel">
@@ -273,8 +279,11 @@ export default function ResultsPanel({
         </div>
       ) : (
         <>
-          {/* Top: matchup rectangles + verdict + result */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+          {/* Top: calls row — what each player picked this play. */}
+          <CallsRow p={playResult!} />
+
+          {/* Matchup rectangles */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
             {isFG ? (
               <FgMatchupRect p={playResult!} visible={vMatchup1} />
             ) : isPunt ? (
@@ -288,7 +297,6 @@ export default function ResultsPanel({
                 defLabel="DEF SKILL"
                 defRoll={playResult!.def_roll}
                 defBound={playResult!.def_skill_eff}
-                forceOffWins={mismatchAutoWin}
                 visible={vMatchup1}
                 ringColor="#c8ff00"
               />

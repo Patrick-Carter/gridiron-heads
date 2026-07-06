@@ -66,10 +66,11 @@ describe('resolvePlay — roll-data plumbing (Phase 0)', () => {
     }
   });
 
-  it('parent mismatch: off_roll + def_roll stay 0 (no skill roll fired)', () => {
-    // When defense guesses wrong parent, offense auto-wins — no roll is made,
-    // so the values stay at their default 0. The HUD will detect this case
-    // by checking `parent_match === false` and skip the skill-roll display.
+  it('parent mismatch: rolls still fire (cosmetic), offense wins via auto-win', () => {
+    // When defense guesses wrong parent the offense is credited with the
+    // win regardless of the roll value — but the rolls are still produced so
+    // the client HUD always shows two numbers. The win flag (offense_wins)
+    // is what drives yardage; the rolled numbers are visual only.
     const r = resolvePlay({
       off_skill: 70,
       def_skill: 65,
@@ -78,8 +79,13 @@ describe('resolvePlay — roll-data plumbing (Phase 0)', () => {
       seed: 42,
     });
     expect(r.parent_match).toBe(false);
-    expect(r.off_roll).toBe(0);
-    expect(r.def_roll).toBe(0);
+    // Rolls fired: each is independently bounded by its respective skill.
+    expect(r.off_roll).toBeGreaterThanOrEqual(0);
+    expect(r.off_roll).toBeLessThanOrEqual(70);
+    expect(r.def_roll).toBeGreaterThanOrEqual(0);
+    expect(r.def_roll).toBeLessThanOrEqual(65);
+    // Offense still credited with the auto-win regardless of rolled values.
+    expect(r.turnover).toBe(false);
   });
 
   it('punt/fg: line rolls stay 0 (line roll skipped for non-run/pass)', () => {

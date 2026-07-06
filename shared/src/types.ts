@@ -115,22 +115,22 @@ export interface PlayResult {
   offense_direction: 1 | -1;
 
   // === Phase 0: roll-data plumbing (was discarded before — now exposed to client) ===
-  /** Skill roll [0, off_skill_eff]. Higher = offense wins the play. 0 when parent mismatched (offense auto-wins) or punt/fg. */
-  off_roll?: number;
-  /** Skill roll [0, def_skill_eff]. Higher = defense wins the play. 0 when punt/fg. */
-  def_roll?: number;
+  /** Skill roll [0, off_skill_eff]. Higher = offense wins the play. Always present; 0 on punt/fg (no skill roll fired). On parent mismatch the roll is cosmetic — offense is auto-credited with the win. */
+  off_roll: number;
+  /** Skill roll [0, def_skill_eff]. Higher = defense wins the play. 0 on punt/fg. */
+  def_roll: number;
   /** Effective off_skill after QB modifiers applied (the bound for off_roll). */
-  off_skill_eff?: number;
+  off_skill_eff: number;
   /** Effective def_skill after QB modifiers applied (the bound for def_roll). */
-  def_skill_eff?: number;
+  def_skill_eff: number;
   /** O-LINE roll [0, off_line_skill]. Per-play trench roll. 0 when punt/fg. */
-  off_line_roll?: number;
+  off_line_roll: number;
   /** D-LINE roll [0, def_line_skill]. Per-play trench roll. 0 when punt/fg. */
-  def_line_roll?: number;
+  def_line_roll: number;
   /** O_LINE skill bound for off_line_roll. */
-  off_line_skill?: number;
+  off_line_skill: number;
   /** D_LINE skill bound for def_line_roll. */
-  def_line_skill?: number;
+  def_line_skill: number;
   /** Which side won the line roll (null when gap was below LINE_ROLL_GAP_LEAN or punt/fg). */
   line_winner?: 'offense' | 'defense' | null;
   /** "lean" (gap 5..14) | "dominate" (gap >=15) | null. Drives yardage nudge / outcome flip. */

@@ -8,7 +8,6 @@ import ScorePanel from '../components/ScorePanel.js';
 import RosterModal from '../components/RosterModal.js';
 import ResultsPanel from '../components/ResultsPanel.js';
 import HistoryPanel from '../components/HistoryPanel.js';
-import ReplayScrubber from '../components/ReplayScrubber.js';
 import TdConfetti from '../components/TdConfetti.js';
 import {
   initAudio,
@@ -48,10 +47,6 @@ export default function Game({
   const opponentId = players.find((p) => p.id !== meId)?.id;
   const opponentScheme = state.pending_schemes?.[opponentId ?? ''] ?? null;
   const [isAnimating, setIsAnimating] = useState(false);
-  /** When set, the field renders a single frame at this progress instead of
-   *  running the animation. The ReplayScrubber component (Phase 6) controls
-   *  this via drag/scrub. null = run live animation. */
-  const [scrubProgress, setScrubProgress] = useState<number | null>(null);
   /** Live animation progress (0..1). Updated by Field via onProgress callback.
    *  Drives the RollReveal HUD's flip-in reveal timing. */
   const [animProgress, setAnimProgress] = useState<number>(0);
@@ -165,7 +160,6 @@ export default function Game({
           awayScore={game.scores[1]}
           down={game.down}
           distance={game.distance}
-          scrubProgress={scrubProgress}
           onProgress={(p) => {
             // Throttle React updates: only commit state every ~30ms
             const now = performance.now();
@@ -175,18 +169,6 @@ export default function Game({
               (animProgressRef as any)._lastCommit = now;
             }
           }}
-        />
-      </div>
-
-      {/* Phase 6: replay scrubber — frame-step the last play. Desktop only;
-          it's a niche debug-style control and there isn't room for the slider
-          on a phone layout below the canvas. */}
-      <div className="hidden md:block">
-        <ReplayScrubber
-          playResult={lastPlayResult}
-          isAnimating={isAnimating}
-          scrubProgress={scrubProgress}
-          setScrubProgress={setScrubProgress}
         />
       </div>
 
@@ -251,14 +233,14 @@ export default function Game({
           {game.phase === 'ready_to_snap' && !isOffense && (
             <div className="panel-flash text-center space-y-2 animate-pulse">
               <div className="panel-titlebar !mt-0"><span>Defense read set</span><span className="text-xs">Snap!</span></div>
-              <div className="text-xs font-bold">YOU CALLED</div>
-              <div className="text-2xl font-black">
-                {pendingMyScheme && (
-                  <>
-                    <span className="chip !bg-maroon !text-cream">{pendingMyScheme.parent.toUpperCase()}</span>{' '}
-                    <span className="chip !bg-maroon !text-cream">{pendingMyScheme.sub.toUpperCase()}</span>
-                  </>
-                )}
+              <div className="flex items-center justify-center gap-2 text-sm flex-wrap">
+                <span className="chip !bg-maroon !text-cream">
+                  DEF (you): {pendingMyScheme ? `${pendingMyScheme.parent.toUpperCase()} ${pendingMyScheme.sub.toUpperCase()}` : '—'}
+                </span>
+                <span className="text-ink/60 font-black">vs</span>
+                <span className="chip !bg-lime !text-ink">
+                  OFF: {opponentScheme ? `${opponentScheme.parent.toUpperCase()} ${opponentScheme.sub.toUpperCase()}` : '—'}
+                </span>
               </div>
               <div className="text-base">🏈 Offense snapping…</div>
             </div>

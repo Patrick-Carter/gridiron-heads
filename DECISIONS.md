@@ -180,7 +180,7 @@ fixed height + `rounded` border in favor of `aspect-ratio` 2:1 + a
 | A3 | `yards_pct` modifier is multiplicative on post-roll yards. |
 | A4 | Loss of yards on sack/TFL capped at -4 (avoids safety spirals). |
 | A5 | Player names shown as entered; no auth. |
-| A6 | Replay = last play only; cleared on next play resolve. |
+| A6 | (removed) — replay scrubber feature removed; auto-advance recap only. |
 | A7 | `/join/:sessionId` URL pattern shows the join screen pre-filled. |
 | A8 | Field always renders going right — no mirror mode, no left-drive. |
 

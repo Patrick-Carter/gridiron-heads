@@ -45,7 +45,7 @@ node --import tsx scripts/cleanup_sessions.ts
      possession). Defense may only audible in response to an offense audible/fake.
      Audibles not allowed on punt/FG.
    - **Snap** — Offense clicks SNAP; server resolves with seeded RNG.
-   - **Result** — Animated canvas + text recap. Last play can be replayed.
+    - **Result** — Animated canvas + text recap.
    - **Auto-advance** — Server auto-transitions play_anim → between_plays → awaiting_schemes
      over 4.5s. Both players see the game flow without clicking.
 

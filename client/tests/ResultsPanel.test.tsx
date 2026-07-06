@@ -79,20 +79,33 @@ describe('ResultsPanel — matchup rectangles', () => {
     expect(symbol.textContent).toBe('>');
   });
 
-  it('parent mismatch renders em-dashes and forces > (offense auto-wins)', () => {
+  it('parent mismatch: rolls are still rendered (defense misread), offense auto-wins', () => {
+    // On parent mismatch the resolver fires the rolls for HUD purposes but
+    // the offense is still credited with the win — symbol may be anything the
+    // rolls produced (here def rolled higher, symbol is '<'); the verdict
+    // line flags "DEFENSE MISREAD" and the result card yardage still
+    // favors the offense.
     const mismatch = {
       ...basePlayResult,
       off_call: { parent: 'run', sub: 'inside' },
       def_call: { parent: 'pass', sub: 'deep' },
       parent_match: false,
       sub_match: false,
-      off_roll: 0,
-      def_roll: 0,
+      off_roll: 12,
+      def_roll: 47,
+      // Clear line regime so the "DEFENSE MISREAD" verdict shows instead of
+      // being overridden by "LINE DOMINATES".
+      line_regime: null,
+      line_winner: null,
+      line_roll_gap: 0,
+      turnover: false,
     };
     render(<ResultsPanel playResult={mismatch} progress={1} />);
-    expect(screen.getByTestId('matchup-skill-off').textContent).toBe('—/88');
-    expect(screen.getByTestId('matchup-skill-def').textContent).toBe('—/80');
-    expect(screen.getByTestId('matchup-skill-symbol').textContent).toBe('>');
+    expect(screen.getByTestId('matchup-skill-off').textContent).toBe('12/88');
+    expect(screen.getByTestId('matchup-skill-def').textContent).toBe('47/80');
+    expect(screen.getByTestId('matchup-skill-symbol').textContent).toBe('<');
+    // Verdict line flags the misread
+    expect(screen.getByTestId('roll-verdict').textContent).toMatch(/DEFENSE MISREAD/i);
   });
 });
 

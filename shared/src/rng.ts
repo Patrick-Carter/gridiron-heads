@@ -1,5 +1,5 @@
 // Mulberry32 — fast deterministic 32-bit PRNG.
-// Same seed → byte-identical sequence. Used for replay parity.
+// Same seed → byte-identical sequence.
 
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;

@@ -149,6 +149,11 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
   // the skill roll — defense is out of position and shouldn't be able to stop the play.
   // The skill values still scale the yardage (via yards_pct below). When parent matches,
   // it's a fair roll: higher skill wins, ties = 0 yards, no turnover.
+  //
+  // Rolls are always fired (even on parent mismatch) so the client HUD can show
+  // two real numbers every play. On parent mismatch the rolled values are
+  // cosmetic only — the win flag below is forced and yardage is gated by the
+  // existing tier system. The verdict line still flags "DEFENSE MISREAD".
   let offense_wins = false;
   let defense_wins = false;
   let off_roll = 0;
@@ -156,13 +161,15 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
   if (parent === 'punt' || parent === 'fg') {
     offense_wins = false;
     defense_wins = false;
-  } else if (!parent_match) {
-    offense_wins = true;
   } else {
     off_roll = Math.floor(rng() * (off_skill + 1));
     def_roll = Math.floor(rng() * (def_skill + 1));
-    if (off_roll > def_roll) offense_wins = true;
-    else if (def_roll > off_roll) defense_wins = true;
+    if (!parent_match) {
+      offense_wins = true;
+    } else {
+      if (off_roll > def_roll) offense_wins = true;
+      else if (def_roll > off_roll) defense_wins = true;
+    }
   }
 
   // === Line roll (D-LINE / O-LINE mechanic) =================================

@@ -106,9 +106,9 @@ export default function HistoryPanel({
   history = [],
   historyCap = 5,
 }: HistoryPanelProps) {
-  // History: exclude the current playResult (it's already shown in the
-  // Results+Rolls column), then take the last (historyCap - 1) entries.
-  // Reverse so newest is first.
+  // History: exclude the currently animating playResult (it's already shown
+  // in the live ResultsPanel above). Then take the last (historyCap - 1)
+  // entries. Reverse so newest is first.
   const currentSeed = playResult?.seed ?? null;
   const priorHistory = currentSeed != null
     ? history.filter((h) => h.seed !== currentSeed)

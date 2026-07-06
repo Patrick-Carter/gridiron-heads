@@ -1354,8 +1354,6 @@ export interface FieldProps {
   awayScore: number;
   down: 1 | 2 | 3 | 4;
   distance: number;
-  /** Override progress for replay scrubbing (0..1). */
-  scrubProgress?: number | null;
   /** Called every animation frame with progress 0..1. Used by RollReveal
    *  to sync reveal timing with the canvas animation. */
   onProgress?: (p: number) => void;
@@ -1373,7 +1371,6 @@ export default function Field({
   awayScore,
   down,
   distance,
-  scrubProgress,
   onProgress,
 }: FieldProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1404,7 +1401,7 @@ export default function Field({
 
   // Animation effect
   useEffect(() => {
-    if (!playResult || !isAnimating || scrubProgress != null) return;
+    if (!playResult || !isAnimating) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -1470,30 +1467,7 @@ export default function Field({
     return () => {
       if (animationRef.current != null) cancelAnimationFrame(animationRef.current);
     };
-  }, [playResult, isAnimating, ballYardline, offenseDirection, homeName, awayName, homeScore, awayScore, down, distance, scrubProgress]);
-
-  // Scrubbing: render a single frame at scrubProgress
-  useEffect(() => {
-    if (scrubProgress == null || !playResult) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    if (animationRef.current != null) {
-      cancelAnimationFrame(animationRef.current);
-      animationRef.current = null;
-    }
-    const direction: 1 | -1 = playResult.offense_direction ?? offenseDirection;
-    const animLosYardline = playResult.yardline_before ?? ballYardline;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawScoreboard(ctx, homeName, awayName, homeScore, awayScore);
-    drawCrowdBand(ctx, SCOREBOARD_H);
-    drawFieldBase(ctx, animLosYardline, direction, distance, homeName, awayName);
-    drawCrowdBand(ctx, FIELD_BOTTOM);
-    drawStatusBar(ctx, down, distance, animLosYardline, direction);
-    const frame = computeFrame(ctx, canvas, playResult, scrubProgress, direction);
-    drawAnimFrame(ctx, canvas, frame);
-  }, [scrubProgress, playResult]);
+  }, [playResult, isAnimating, ballYardline, offenseDirection, homeName, awayName, homeScore, awayScore, down, distance]);
 
   return (
     <div

@@ -327,6 +327,19 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       text_recap: fg.make
         ? `FIELD GOAL IS GOOD! (${fg.total} > ${ytg})`
         : `FG missed (${fg.total} ≤ ${ytg})`,
+      // Skill + line rolls are 0 on FG (no roll fires). The FG-specific fields
+      // below populate the FG matchup rect.
+      off_roll: 0,
+      def_roll: 0,
+      off_skill_eff: 0,
+      def_skill_eff: 0,
+      off_line_roll: 0,
+      def_line_roll: 0,
+      off_line_skill: 0,
+      def_line_skill: 0,
+      line_winner: null,
+      line_regime: null,
+      line_roll_gap: 0,
       // Phase 0: surface the FG roll values for the canvas HUD
       fg_power_roll: fg.power_roll,
       fg_bonus_roll: fg.bonus_roll,
@@ -388,6 +401,18 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       text_recap: turnover
         ? `PUNT BLOCKED! Defense takes over.`
         : `Punt of ${punt_yards} yards.`,
+      // Skill + line rolls are 0 on punt (no skill or line roll fires).
+      off_roll: 0,
+      def_roll: 0,
+      off_skill_eff: 0,
+      def_skill_eff: 0,
+      off_line_roll: 0,
+      def_line_roll: 0,
+      off_line_skill: 0,
+      def_line_skill: 0,
+      line_winner: null,
+      line_regime: null,
+      line_roll_gap: 0,
       // Phase 0: surface the punt roll for the canvas HUD
       punt_roll: punt_yards,
     };
