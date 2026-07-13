@@ -173,6 +173,25 @@ describe('play animation planner', () => {
     expect(missedFg.banner?.text).toBe('NO GOOD');
   });
 
+  it('renders shootout kicks without a defense or block effects', () => {
+    const plan = buildPlayPlan(result('fg', 'inside', 'field_goal_good', {
+      shootout_attempt: {
+        round: 1,
+        distance: 25,
+        player_idx: 0,
+        made: true,
+        power_roll: 40,
+        bonus_roll: 10,
+        total: 50,
+        power_used: 70,
+        seed: 1,
+      },
+    }), 0);
+    expect(plan.frames[0].players.filter((player) => player.side === 'offense')).toHaveLength(11);
+    expect(plan.frames[0].players.filter((player) => player.side === 'defense')).toHaveLength(0);
+    expect(plan.effects.some((event) => event.type === 'block')).toBe(false);
+  });
+
   it('starts every formation with a complete 22-player pre-snap roster', () => {
     for (const play of [
       result('run', 'inside', 'run'),

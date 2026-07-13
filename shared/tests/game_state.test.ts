@@ -31,6 +31,8 @@ describe('newGameState', () => {
     expect(g.ball_yardline).toBe(25);
     expect(g.possession_idx).toBe(0);
     expect(g.scores).toEqual([0, 0]);
+    expect(g.possessions_completed).toEqual([0, 0]);
+    expect(g.shootout).toBeNull();
     expect(g.phase).toBe('between_plays');
     expect(g.history).toEqual([]);
   });

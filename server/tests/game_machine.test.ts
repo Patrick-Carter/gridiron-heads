@@ -14,6 +14,9 @@ import {
   emptyTeam,
   isValidPlay,
   audibleLimit,
+  resolveShootoutKick,
+  concedeMatch,
+  endMatch,
 } from '../src/socket/game_machine.js';
 import type { RoomState } from '../src/socket/game_machine.js';
 import { kickoffYardline, offenseDirection } from '@gridiron/shared';
@@ -425,6 +428,7 @@ describe('Play resolution', () => {
         expect(result.text_recap).toContain('TURNOVER ON DOWNS');
         expect(r.game!.down).toBe(1);
         expect(r.game!.distance).toBe(10);
+        expect(r.game!.possessions_completed[beforeOff]).toBe(1);
         resultFound = true;
       }
     }
@@ -469,6 +473,7 @@ describe('Play resolution', () => {
     let found = false;
     for (let seed = 1; seed < 300 && !found; seed++) {
       const r = setupReadyToSnapRoom();
+      const offIdx = r.game!.possession_idx;
       r.pending_schemes[r.players[0].id] = { parent, sub };
       r.pending_schemes[r.players[1].id] = { parent, sub };
       const { result } = resolveCurrentPlay(r, seed);
@@ -476,6 +481,7 @@ describe('Play resolution', () => {
         expect(result.turnover).toBe(true);
         expect(result.turnover_on_downs).toBe(false);
         expect(result.effective_off_call).toEqual({ parent, sub });
+        expect(r.game!.possessions_completed[offIdx]).toBe(1);
         found = true;
       }
     }
@@ -501,6 +507,7 @@ describe('Play resolution', () => {
         // After FG, opposing team takes ball at their own 25 — dir-aware
         // absolute spot (kickoffYardline of the NEW offense's direction).
         expect(r.game!.ball_yardline).toBe(kickoffYardline(offenseDirection(r.game!)));
+        expect(r.game!.possessions_completed[offIdx]).toBe(1);
         succeeded = true;
         break;
       }
@@ -524,6 +531,7 @@ describe('Play resolution', () => {
         expect(r.game!.scores[0]).toBe(0);
         expect(result.turnover).toBe(true);
         expect(result.play_outcome).toBe('field_goal_blocked');
+        expect(r.game!.possessions_completed[0]).toBe(1);
         found = true;
       }
     }
@@ -548,6 +556,7 @@ describe('Play resolution', () => {
         expect(result.yardline_after).toBe(receivingFive);
         expect(result.yards).toBe(5);
         expect(result.turnover).toBe(true);
+        expect(r.game!.possessions_completed[possession]).toBe(1);
         found = true;
       }
     }
@@ -614,6 +623,7 @@ describe('Play resolution', () => {
       if (scoring_event === 'td') {
         expect(r.game!.scores[offIdx]).toBe(1);
         expect(result.scoring_event).toBe('td');
+        expect(r.game!.possessions_completed[offIdx]).toBe(1);
         found = true;
         break;
       }
@@ -653,6 +663,76 @@ describe('Play resolution', () => {
     }
     expect(found).toBe(true);
   });
+
+  it('shows completed possession progress without consuming a normal play', () => {
+    const r = setupReadyToSnapRoom();
+    const offIdx = r.game!.possession_idx;
+    const defIdx = offIdx === 0 ? 1 : 0;
+    r.pending_schemes[r.players[offIdx].id] = { parent: 'run', sub: 'inside' };
+    r.pending_schemes[r.players[defIdx].id] = { parent: 'pass', sub: 'deep' };
+    resolveCurrentPlay(r, 1);
+    expect(r.game!.possessions_completed).toEqual([0, 0]);
+  });
+
+  it('counts a punt as one completed possession and waits at 4-3', () => {
+    const r = setupReadyToSnapRoom();
+    r.game!.possession_idx = 0;
+    r.game!.possessions_completed = [3, 3];
+    r.pending_schemes[r.players[0].id] = { parent: 'punt', sub: 'inside' };
+    r.pending_schemes[r.players[1].id] = { parent: 'run', sub: 'inside' };
+    resolveCurrentPlay(r, 1);
+    expect(r.game!.possessions_completed).toEqual([4, 3]);
+    expect(r.outcome).toBeNull();
+    expect(r.game!.phase).toBe('between_plays');
+  });
+
+  it('ends regulation only after both teams complete four possessions', () => {
+    const r = setupReadyToSnapRoom();
+    r.game!.possession_idx = 1;
+    r.game!.possessions_completed = [4, 3];
+    r.game!.scores = [1, 0];
+    r.pending_schemes[r.players[1].id] = { parent: 'punt', sub: 'inside' };
+    r.pending_schemes[r.players[0].id] = { parent: 'run', sub: 'inside' };
+    resolveCurrentPlay(r, 1);
+    expect(r.game!.possessions_completed).toEqual([4, 4]);
+    expect(r.outcome).toEqual({ winner_idx: 0, reason: 'regulation', conceded_by_idx: null });
+    expect(r.game!.phase).toBe('ended');
+  });
+
+  it('enters a paired shootout after tied regulation and advances tied rounds', () => {
+    const r = enterShootout();
+    expect(r.game!.shootout?.distance).toBe(25);
+    const firstIdx = r.game!.shootout!.next_kicker_idx;
+    const targetMake = findShootoutSeed(r, firstIdx, true);
+    const first = resolveShootoutKick(r, firstIdx, targetMake);
+    expect(first.ok).toBe(true);
+    expect(r.outcome).toBeNull();
+
+    r.game!.phase = 'shootout_ready';
+    const secondIdx = firstIdx === 0 ? 1 : 0;
+    const secondMake = findShootoutSeed(r, secondIdx, true);
+    const second = resolveShootoutKick(r, secondIdx, secondMake);
+    expect(second.ok).toBe(true);
+    expect(r.outcome).toBeNull();
+    expect(r.game!.shootout?.round).toBe(2);
+    expect(r.game!.shootout?.distance).toBe(35);
+    expect(r.game!.shootout?.first_kicker_idx).toBe(secondIdx);
+    expect(r.game!.scores).toEqual([0.5, 0.5]);
+  });
+
+  it('ends a shootout after one make and one miss', () => {
+    const r = enterShootout();
+    const firstIdx = r.game!.shootout!.next_kicker_idx;
+    resolveShootoutKick(r, firstIdx, findShootoutSeed(r, firstIdx, true));
+    r.game!.phase = 'shootout_ready';
+    const secondIdx = firstIdx === 0 ? 1 : 0;
+    resolveShootoutKick(r, secondIdx, findShootoutSeed(r, secondIdx, false));
+    expect(r.pending_outcome).toEqual({ winner_idx: firstIdx, reason: 'shootout', conceded_by_idx: null });
+    const pending = r.pending_outcome!;
+    endMatch(r, pending.winner_idx, pending.reason, pending.conceded_by_idx);
+    expect(r.outcome).toEqual({ winner_idx: firstIdx, reason: 'shootout', conceded_by_idx: null });
+    expect(r.game!.phase).toBe('ended');
+  });
 });
 
 function setupReadyToSnapRoom(): RoomState {
@@ -673,6 +753,48 @@ function setupReadyToSnapRoom(): RoomState {
   startGame(room);
   return room;
 }
+
+function enterShootout(): RoomState {
+  const room = setupReadyToSnapRoom();
+  room.game!.possession_idx = 1;
+  room.game!.possessions_completed = [4, 3];
+  room.game!.scores = [0, 0];
+  room.pending_schemes[room.players[1].id] = { parent: 'punt', sub: 'inside' };
+  room.pending_schemes[room.players[0].id] = { parent: 'run', sub: 'inside' };
+  resolveCurrentPlay(room, 1);
+  room.game!.phase = 'shootout_ready';
+  return room;
+}
+
+function findShootoutSeed(room: RoomState, playerIdx: 0 | 1, made: boolean): number {
+  for (let seed = 1; seed < 10_000; seed++) {
+    const clone = structuredClone(room) as RoomState;
+    clone.game!.phase = 'shootout_ready';
+    clone.game!.shootout!.next_kicker_idx = playerIdx;
+    const resolved = resolveShootoutKick(clone, playerIdx, seed);
+    if (resolved.ok && resolved.result.shootout_attempt?.made === made) return seed;
+  }
+  throw new Error(`no shootout seed found for made=${made}`);
+}
+
+describe('Concession', () => {
+  it('allows a player to concede during the draft', () => {
+    const room = mkRoom();
+    addPlayer(room, 'g1', 'Bob');
+    flipCoin(room);
+    startDraft(room);
+    expect(concedeMatch(room, 'host1')).toEqual({ ok: true });
+    expect(room.outcome).toEqual({ winner_idx: 1, reason: 'concession', conceded_by_idx: 0 });
+  });
+
+  it('allows a player to concede during regulation and rejects a second result', () => {
+    const room = setupReadyToSnapRoom();
+    expect(concedeMatch(room, 'g1')).toEqual({ ok: true });
+    expect(room.game!.phase).toBe('ended');
+    expect(room.outcome?.winner_idx).toBe(0);
+    expect(concedeMatch(room, 'host1')).toEqual({ ok: false, reason: 'match_ended' });
+  });
+});
 
 describe('Snapshot', () => {
   it('serializes room for broadcast', () => {

@@ -1,5 +1,6 @@
 import VolumePanel from './VolumePanel.js';
 import { ballSpotAt } from '@gridiron/shared';
+import type { ShootoutState } from '@gridiron/shared';
 
 function downLabel(d: number): string {
   return d === 1 ? '1st' : d === 2 ? '2nd' : d === 3 ? '3rd' : '4th';
@@ -24,6 +25,8 @@ function spotText(spot: ReturnType<typeof ballSpotAt>): string {
  */
 export default function ScorePanel({
   scores,
+  possessionsCompleted,
+  shootout,
   myIdx,
   players,
   possessionIdx,
@@ -34,6 +37,8 @@ export default function ScorePanel({
   onOpenRoster,
 }: {
   scores: [number, number];
+  possessionsCompleted: [number, number];
+  shootout: ShootoutState | null;
   myIdx: 0 | 1;
   players: { id: string; name: string }[];
   possessionIdx: 0 | 1;
@@ -76,6 +81,9 @@ export default function ScorePanel({
               <span className="ml-auto text-base md:text-lg leading-none tabular-nums">
                 {scores[i].toFixed(1)}
               </span>
+              <span className="chip !text-[9px] !py-0 !px-1 whitespace-nowrap" data-testid={`possessions-${i}`}>
+                POS {possessionsCompleted[i]}/4
+              </span>
               {i === 1 && hasBall && <span aria-label="has possession">🏈</span>}
             </button>
           );
@@ -83,11 +91,17 @@ export default function ScorePanel({
 
         {/* Center chip: down & distance + ball spot. */}
         <div className="basis-full lg:basis-auto lg:flex-none order-3 lg:order-none flex items-center justify-center gap-1.5 px-2 py-1 border-2 border-ink bg-cream text-xs md:text-sm font-black uppercase tracking-wide">
-          <span>{downLabel(down)} &amp; {distance}</span>
-          <span className="text-ink/60 font-bold normal-case">{spotText(spot)}</span>
-          <span className="hidden md:inline text-ink/50 font-bold">
-            {offenseDirection === 1 ? '→' : '←'}
-          </span>
+          {shootout ? (
+            <span>FG SHOOTOUT · RD {shootout.round} · {shootout.distance} YDS</span>
+          ) : (
+            <>
+              <span>{downLabel(down)} &amp; {distance}</span>
+              <span className="text-ink/60 font-bold normal-case">{spotText(spot)}</span>
+              <span className="hidden md:inline text-ink/50 font-bold">
+                {offenseDirection === 1 ? '→' : '←'}
+              </span>
+            </>
+          )}
         </div>
 
         {/* VolumePanel — tucked into the strip's top-right corner. */}

@@ -70,6 +70,7 @@ export function newGameState(
     session_id,
     phase: 'between_plays',
     scores: [0, 0],
+    possessions_completed: [0, 0],
     down: 1,
     distance: 10,
     ball_yardline: 25,
@@ -79,6 +80,7 @@ export function newGameState(
     fake_audibles_used: [0, 0],
     history: [],
     last_play_seed: null,
+    shootout: null,
   };
 }
 

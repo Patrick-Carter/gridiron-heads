@@ -26,7 +26,7 @@
   <Tag>latest</Tag>
   <HubURL>https://github.com/patrick-carter/gridiron-heads</HubURL>
   <Icon>https://raw.githubusercontent.com/patrick-carter/gridiron-heads/main/.github/icon.png</Icon>
-  <Description>2-player head-to-head browser football. Draft, scheme pick, audible, snap. First to 3, win by 2.</Description>
+  <Description>2-player head-to-head browser football. Four possessions each; tied games use a paired FG shootout.</Description>
   <Category>Games:</Category>
   <Category>Productivity:</Category>
   <Maintainer>patrick-carter</Maintainer>

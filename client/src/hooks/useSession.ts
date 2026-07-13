@@ -5,7 +5,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { getSocket, EVENTS } from '../api/socket.js';
 import type { Socket } from 'socket.io-client';
-import type { PlayResult } from '@gridiron/shared';
+import type { GameState, MatchOutcome, PlayResult } from '@gridiron/shared';
 
 export interface SessionSnapshot {
   session_id: string;
@@ -13,7 +13,8 @@ export interface SessionSnapshot {
   coin_result?: 'heads' | 'tails' | null;
   first_possession_id?: string | null;
   draft?: any;
-  game?: any;
+  game?: GameState | null;
+  outcome?: MatchOutcome | null;
   pending_schemes?: Record<string, any>;
 }
 
@@ -49,6 +50,7 @@ export function useSession(
     const onState = (snap: SessionSnapshot) => {
       setError(null);
       setState(snap);
+      if (!snap.game) setLastPlayResult(null);
     };
     const onPlayResult = (msg: PlayResultMsg) => {
       setLastPlayResult(msg.result);

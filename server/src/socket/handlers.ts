@@ -17,6 +17,10 @@ import {
   isValidPlay,
   audibleLimit,
   readyToSnap,
+  concedeMatch,
+  resolveShootoutKick,
+  nextActionPhase,
+  endMatch,
 } from './game_machine.js';
 import { tickCpu, CPU_PLAYER_ID } from './cpu.js';
 import { TOTAL_PICKS } from '@gridiron/shared';
@@ -171,11 +175,11 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       if (!room) return;
       const player = room.players.find((p) => p.id === sdata.player_id);
       if (!player || player.is_cpu) return;
-      if (room.game && room.game.phase !== 'ended') {
+      if (!room.outcome && room.game && room.game.phase !== 'ended') {
         socket.emit('session:error', { error: 'game_in_progress' });
         return;
       }
-      if (room.draft && !room.game) {
+      if (!room.outcome && room.draft && !room.game) {
         socket.emit('session:error', { error: 'draft_in_progress' });
         return;
       }
@@ -183,9 +187,11 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       touchRoom(room);
       io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
       if (allReady(room)) {
-        if (room.game?.phase === 'ended') {
+        if (room.outcome) {
           room.draft_seed = Math.floor(Math.random() * 2 ** 32);
         }
+        room.outcome = null;
+        room.pending_outcome = null;
         room.game = null;
         room.draft = null;
         clearSchemes(room);
@@ -200,6 +206,7 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       if (!sdata.session_id || !sdata.player_id) return;
       const room = getRoom(sdata.session_id);
       if (!room || !room.draft) return;
+      if (room.outcome) return;
       if (sdata.player_id === CPU_PLAYER_ID) {
         socket.emit('session:error', { error: 'cpu_id_reserved' });
         return;
@@ -443,7 +450,7 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       const seed = Math.floor(Math.random() * 2 ** 32);
       const generation = ++room.play_generation;
       const { result } = resolveCurrentPlay(room, seed);
-      const gameEnded = (game.phase as string) === 'ended';
+      const gameEnded = !!room.outcome;
       if (!gameEnded) game.phase = 'play_anim';
       touchRoom(room);
       io.to(`session:${sdata.session_id}`).emit('play:result', { result });
@@ -461,7 +468,7 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       setTimeout(() => {
         const r = getRoom(sid);
         if (r?.play_generation === generation && r.game?.phase === 'between_plays') {
-          r.game.phase = 'awaiting_schemes';
+           r.game.phase = nextActionPhase(r.game);
           clearSchemes(r);
           touchRoom(r);
           broadcast(io, sid, r);
@@ -478,11 +485,75 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
         return;
       }
       const game = room.game;
-      if (game.phase === 'ended') return;
-      if (game.phase !== 'between_plays' && game.phase !== 'play_anim') return;
+      if (room.outcome || game.phase === 'ended') return;
+      if (game.phase !== 'between_plays' && game.phase !== 'play_anim'
+        && game.phase !== 'shootout_between' && game.phase !== 'shootout_anim') return;
       room.play_generation++;
-      game.phase = 'awaiting_schemes';
-      clearSchemes(room);
+      if (room.pending_outcome) {
+        const pending = room.pending_outcome;
+        endMatch(room, pending.winner_idx, pending.reason, pending.conceded_by_idx);
+      } else {
+        game.phase = nextActionPhase(game);
+        clearSchemes(room);
+      }
+      touchRoom(room);
+      broadcast(io, sdata.session_id, room);
+    });
+
+    socket.on('game:shootout_kick', () => {
+      if (!sdata.session_id || !sdata.player_id) return;
+      const room = getRoom(sdata.session_id);
+      if (!room || !room.game) return;
+      if (sdata.player_id === CPU_PLAYER_ID) {
+        socket.emit('session:error', { error: 'cpu_id_reserved' });
+        return;
+      }
+      const player_idx = room.players.findIndex((player) => player.id === sdata.player_id);
+      if (player_idx !== 0 && player_idx !== 1) return;
+      const seed = Math.floor(Math.random() * 2 ** 32);
+      const resolved = resolveShootoutKick(room, player_idx as 0 | 1, seed);
+      if (!resolved.ok) {
+        socket.emit('session:error', { error: resolved.reason });
+        return;
+      }
+      const generation = ++room.play_generation;
+      room.game.phase = 'shootout_anim';
+      touchRoom(room);
+      io.to(`session:${sdata.session_id}`).emit('play:result', { result: resolved.result });
+      broadcast(io, sdata.session_id, room);
+      const sid = sdata.session_id;
+      setTimeout(() => {
+        const r = getRoom(sid);
+        if (r?.play_generation === generation && r.game?.phase === 'shootout_anim') {
+          r.game.phase = 'shootout_between';
+          touchRoom(r);
+          broadcast(io, sid, r);
+        }
+      }, 2000);
+      setTimeout(() => {
+        const r = getRoom(sid);
+        if (r?.play_generation === generation && r.game?.phase === 'shootout_between') {
+          if (r.pending_outcome) {
+            const pending = r.pending_outcome;
+            endMatch(r, pending.winner_idx, pending.reason, pending.conceded_by_idx);
+          } else {
+            r.game.phase = 'shootout_ready';
+          }
+          touchRoom(r);
+          broadcast(io, sid, r);
+        }
+      }, 4500);
+    });
+
+    socket.on('session:concede', () => {
+      if (!sdata.session_id || !sdata.player_id) return;
+      const room = getRoom(sdata.session_id);
+      if (!room) return;
+      const result = concedeMatch(room, sdata.player_id);
+      if (!result.ok) {
+        socket.emit('session:error', { error: result.reason });
+        return;
+      }
       touchRoom(room);
       broadcast(io, sdata.session_id, room);
     });

@@ -9,14 +9,14 @@ A 2-player head-to-head browser football game. **Built and shipped — don't reb
 
 **Stack:** Node 22 + Express 4 + Socket.IO 4 + better-sqlite3 (server) · Vite 5 + React 18 + Tailwind 3 + Socket.IO client (client) · TypeScript 5 throughout · Vitest for tests. Monorepo via npm workspaces (`shared/`, `server/`, `client/`).
 
-**Game:** Alternating-turn draft (each player on their turn picks ANY unpicked group) → simultaneous scheme pick (both online, then reveal) → turn-based audibles (offense flips sub-type, defense responds only to audible/fake) → snap → resolve with seeded RNG → animated canvas + text recap → auto-advance. First to 3 points, win by 2.
+**Game:** Alternating-turn draft (each player on their turn picks ANY unpicked group) → simultaneous scheme pick (both online, then reveal) → turn-based audibles (offense flips sub-type, defense responds only to audible/fake) → snap → resolve with seeded RNG → animated canvas + text recap → auto-advance. Each team gets exactly 4 completed offensive possessions; high score wins, and a tie enters a paired manual FG shootout.
 
 ## How to run
 
 ```bash
 npm install
 npm run dev        # server :3000, client :5173 (Vite proxies /api + /socket.io)
-npm test           # 106 vitest tests across all workspaces
+npm test           # 300 vitest tests across all workspaces
 npm run build      # builds shared, server, client
 npm start          # serves client dist + API from server on :3000
 ```
@@ -30,7 +30,7 @@ These are the things that **will** trip you up if you don't know them:
 - `possession_idx` decides who attacks which end zone:
   - `possession_idx === 0` → offense attacks right toward yardline 100 (`offense_direction = +1`)
   - `possession_idx === 1` → offense attacks left  toward yardline   0 (`offense_direction = -1`)
-- After EVERY change of possession (TD, safety, turnover, turnover-on-downs) the new offense gets a fresh 1st & 10 from the ball's current absolute spot. They attack the OPPOSITE end zone automatically because `offenseDirection` flips with `possession_idx`.
+- After EVERY change of possession (TD, safety, turnover, turnover-on-downs, punt, or FG attempt) the new offense gets a fresh 1st & 10 from the ball's current absolute spot. They attack the OPPOSITE end zone automatically because `offenseDirection` flips with `possession_idx`.
 - The canvas is NEVER mirrored (`ctx.scale(-1, 1)` is still banned — it broke labels in D020). Only the `direction` multiplier on `xOffsetYards * YARD` flips sign in the renderer. Labels (LOS, 1ST) are drawn at pixel coords from absolute positions.
 - Helpers in `shared/src/game_state.ts`:
   - `offenseDirection(state)` → `+1 | -1`
@@ -108,7 +108,7 @@ HTTP `POST /api/sessions` and `/api/sessions/:id/join` write to SQLite. When the
 - **Never** play a sound during render — gate everything in event handlers / useEffect. Web Audio browsers require user-gesture unlock.
 
 ### 11. tests — what works, what doesn't
-- 231 tests, stable. (210 pre-audio + 21 audio = 231)
+- 300 tests, stable.
 - The `inside run vs deep pass` test asserts >80% positive yards — passes because mismatch auto-wins.
 - The `low-yard play advances down` test uses MATCHED parents with skill 1 vs 100 because mismatch auto-wins for offense (no negative yards possible).
 - The `FG made` test searches seeds 1..200 to find one that produces a make (it doesn't always make).
@@ -121,6 +121,15 @@ HTTP `POST /api/sessions` and `/api/sessions/:id/join` write to SQLite. When the
 - Client shows ALL groups + ALL pool options to both players at all times (visibility, not lock-step).
 - The "Next" button is gone — replaced with a "Skip wait" fast-forward button + countdown text.
 - `pick_order` is the authoritative list; `current_turn` is the index.
+
+### 13. Regulation, shootout, and concession
+- Each team gets exactly **4 completed offensive possessions**. A possession ends on TD, safety, turnover, turnover on downs, punt, or any FG attempt (made or missed).
+- The higher score after both teams complete all 4 possessions wins.
+- A regulation tie enters a paired manual FG shootout. Both teams attempt the same distance each round: 25, 35, 45, 55, 65 yards, then 65 again for every later round.
+- One make and one miss decides the game. If both make or both miss, advance to the next round.
+- The team with the first regulation possession kicks first in round 1; kicking order alternates each round.
+- Drafted kicker skill and QB FG buffs apply in the shootout. There is no defensive call or block attempt. Each make adds 0.5 points.
+- Players may concede during the draft, regulation, or shootout.
 
 ## What NOT to do
 
@@ -145,7 +154,7 @@ shared/src/
   qb_pool.ts        # 22 QB pool (buffs-only per D26), drawQBs
   kicker.ts         # 2-roll FG (power + bonus ∈ [0,20])
   play_resolver.ts  # Skill roll + turnover + yardage (TIERED by match quality) + yard-clamp
-  scoring.ts        # addPoints, checkWinner (score≥3 + lead≥2)
+  scoring.ts        # point math + regulation/shootout winner checks
   game_state.ts     # newGameState, advanceAfterPlay (negative yards increase distance)
 
 server/src/
@@ -242,7 +251,7 @@ without a security review:
 ## Test command cheat sheet
 
 ```bash
-# Run all tests (224 expected — 3 e2e + 9 routes + 28 game_machine + 18 cpu + 4 db + 1 app + audio + UI). The previous `server/tests/cpu_e2e.test.ts` (cpu-vs-human solo end-to-end driver) was retired because it was timing-flaky on the 2s + 4.5s server chain and inconsistent across hosts. The vs-CPU logic is still covered by the per-tick CPU unit tests under `server/tests/cpu.test.ts`.
+# Run all tests (300 expected). The previous `server/tests/cpu_e2e.test.ts` (cpu-vs-human solo end-to-end driver) was retired because it was timing-flaky on the 2s + 4.5s server chain and inconsistent across hosts. The vs-CPU logic is still covered by the per-tick CPU unit tests under `server/tests/cpu.test.ts`.
 npx vitest run
 
 # Run a single file

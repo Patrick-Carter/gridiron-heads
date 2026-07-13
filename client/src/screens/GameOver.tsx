@@ -14,11 +14,23 @@ export default function GameOver({
   meId: string;
   onRematch: () => void;
 }) {
-  const game = state.game!;
+  const game = state.game;
+  const outcome = state.outcome!;
   const players = state.players;
   const myIdx = players.findIndex((p) => p.id === meId);
-  const winnerIdx = game.scores[0] > game.scores[1] ? 0 : 1;
+  const winnerIdx = outcome.winner_idx;
   const iWon = winnerIdx === myIdx;
+  const scores = game?.scores ?? [0, 0];
+  const reasonLabel = outcome.reason === 'shootout'
+    ? 'FG Shootout'
+    : outcome.reason === 'concession'
+      ? 'Concession'
+      : '4 Possessions Each';
+  const resultText = outcome.reason === 'concession'
+    ? `${players[outcome.conceded_by_idx ?? 0]?.name ?? 'A player'} conceded. ${players[winnerIdx].name} wins.`
+    : outcome.reason === 'shootout'
+      ? `${players[winnerIdx].name} wins the FG shootout.`
+      : `${players[winnerIdx].name} finishes ahead after four possessions each.`;
 
   // One-shot sting on mount: victory fanfare + cheer if I won, defeat sigh if not.
   useEffect(() => {
@@ -42,19 +54,21 @@ export default function GameOver({
       <div className="panel-flash max-w-md w-full text-center space-y-4 mt-2">
         <div className="panel-titlebar !mt-0">
           <span>Final Score</span>
-          <span className="text-xs">Best of 3</span>
+          <span className="text-xs">{reasonLabel}</span>
         </div>
 
-        <div className="text-xl">
-          <span className="text-ink font-bold">{players[0].name}</span>{' '}
-          <span className="chip !bg-lime">{game.scores[0].toFixed(1)}</span>{' '}
-          <span className="text-ink/40 mx-1">vs</span>{' '}
-          <span className="chip !bg-maroon !text-cream">{game.scores[1].toFixed(1)}</span>{' '}
-          <span className="text-ink font-bold">{players[1].name}</span>
-        </div>
+        {game && (
+          <div className="text-xl">
+            <span className="text-ink font-bold">{players[0].name}</span>{' '}
+            <span className="chip !bg-lime">{scores[0].toFixed(1)}</span>{' '}
+            <span className="text-ink/40 mx-1">vs</span>{' '}
+            <span className="chip !bg-maroon !text-cream">{scores[1].toFixed(1)}</span>{' '}
+            <span className="text-ink font-bold">{players[1].name}</span>
+          </div>
+        )}
 
         <div className="text-base font-bold">
-          🏆 <span className="text-maroon">{players[winnerIdx].name}</span> wins with a {Math.abs(game.scores[0] - game.scores[1]).toFixed(1)}-point lead
+          🏆 <span className="text-maroon">{resultText}</span>
         </div>
 
         {iWon && (

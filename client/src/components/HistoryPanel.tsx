@@ -55,19 +55,27 @@ function HistoryRow({ p, isLast }: { p: PlayResult; isLast: boolean }) {
           {isLast ? '▶ LAST PLAY' : 'PLAY'}
         </span>
         <span className="text-[10px]">
-          {downLabel(p.down)} & {p.distance} · {spotForPlay(p)}
+          {p.shootout_attempt
+            ? `Round ${p.shootout_attempt.round} · ${p.shootout_attempt.distance} yards`
+            : `${downLabel(p.down)} & ${p.distance} · ${spotForPlay(p)}`}
         </span>
       </div>
 
-      <div className="flex items-center justify-center gap-2 text-sm flex-wrap">
-        <span className="chip !bg-lime !text-ink">
-          OFF: {p.off_call?.parent?.toUpperCase()} {p.off_call?.sub?.toUpperCase()}
-        </span>
-        <span className="text-ink/60 font-black">vs</span>
-        <span className="chip !bg-maroon !text-cream">
-          DEF: {p.def_call?.parent?.toUpperCase()} {p.def_call?.sub?.toUpperCase()}
-        </span>
-      </div>
+      {p.shootout_attempt ? (
+        <div className="text-sm">
+          <span className="chip !bg-lime !text-ink">SHOOTOUT KICK</span>
+        </div>
+      ) : (
+        <div className="flex items-center justify-center gap-2 text-sm flex-wrap">
+          <span className="chip !bg-lime !text-ink">
+            OFF: {p.off_call?.parent?.toUpperCase()} {p.off_call?.sub?.toUpperCase()}
+          </span>
+          <span className="text-ink/60 font-black">vs</span>
+          <span className="chip !bg-maroon !text-cream">
+            DEF: {p.def_call?.parent?.toUpperCase()} {p.def_call?.sub?.toUpperCase()}
+          </span>
+        </div>
+      )}
 
       {(p.off_audible || p.off_fake_audible) && (
         <div className="text-[11px] font-bold text-maroon">

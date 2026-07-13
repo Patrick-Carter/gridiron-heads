@@ -292,7 +292,13 @@ export default function ResultsPanel({
       ) : (
         <>
           {/* Top: calls row — what each player picked this play. */}
-          <CallsRow p={playResult!} />
+          {playResult!.shootout_attempt ? (
+            <div className="text-center mt-1">
+              <span className="chip !bg-lime !text-ink">SHOOTOUT KICK</span>
+            </div>
+          ) : (
+            <CallsRow p={playResult!} />
+          )}
 
           {/* Matchup rectangles */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">

@@ -5,6 +5,7 @@ import type { SessionSnapshot } from '../hooks/useSession.js';
 import { modifierDescription } from '@gridiron/shared';
 import FlashHeader from '../components/FlashHeader.js';
 import { initAudio, playDraftPick } from '../audio/synth.js';
+import ConcedeControl from '../components/ConcedeControl.js';
 
 export default function Draft({
   state,
@@ -189,6 +190,9 @@ export default function Draft({
               </div>
             );
           })}
+        </div>
+        <div className="max-w-sm mx-auto">
+          <ConcedeControl onConcede={() => send(EVENTS.CONCEDE)} />
         </div>
       </div>
     </div>

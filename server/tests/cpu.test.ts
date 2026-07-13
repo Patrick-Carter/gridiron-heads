@@ -1,7 +1,7 @@
 // Unit tests for the CPU opponent decision logic in `server/src/socket/cpu.ts`.
 // These tests construct a RoomState by hand (no socket layer) and call the
 // exported CPU functions directly to verify they produce legal moves.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   cpuDraftPick,
   cpuPickScheme,
@@ -9,6 +9,7 @@ import {
   cpuRespondAudible,
   CPU_PLAYER_ID,
   tickCpu,
+  cpuShootoutKick,
 } from '../src/socket/cpu.js';
 import {
   newRoom,
@@ -78,6 +79,7 @@ function makeCpuGameRoom(draft_seed = 1, down: 1 | 2 | 3 | 4 = 1, yardline = 25)
     session_id: room.session_id,
     phase: 'awaiting_schemes',
     scores: [0, 0],
+    possessions_completed: [0, 0],
     down,
     distance: 10,
     ball_yardline: yardline,
@@ -87,6 +89,7 @@ function makeCpuGameRoom(draft_seed = 1, down: 1 | 2 | 3 | 4 = 1, yardline = 25)
     fake_audibles_used: [0, 0],
     history: [],
     last_play_seed: null,
+    shootout: null,
   };
   room.game = game;
   return room;
@@ -361,6 +364,37 @@ describe('cpuRespondAudible', () => {
     const cpuIdx = room.players.findIndex((p) => p.id === CPU_PLAYER_ID) as 0 | 1;
     const r = cpuRespondAudible(room, cpuIdx);
     expect(r).toBeNull();
+  });
+});
+
+describe('CPU shootout', () => {
+  it('automatically resolves the CPU kick when it is the current kicker', () => {
+    vi.useFakeTimers();
+    try {
+      const room = makeCpuGameRoom();
+      const cpuIdx = room.players.findIndex((p) => p.id === CPU_PLAYER_ID) as 0 | 1;
+      room.game!.phase = 'shootout_ready';
+      room.game!.shootout = {
+        round: 1,
+        distance: 25,
+        first_kicker_idx: cpuIdx,
+        next_kicker_idx: cpuIdx,
+        round_attempts: [null, null],
+        attempts: [],
+      };
+      room.game!.possession_idx = cpuIdx;
+      room.game!.ball_yardline = cpuIdx === 0 ? 75 : 25;
+      const emit = vi.fn();
+      const io = { to: vi.fn(() => ({ emit })) } as any;
+      cpuShootoutKick(io, room, cpuIdx);
+      expect(room.game!.shootout.attempts).toHaveLength(1);
+      expect(room.game!.shootout.attempts[0].player_idx).toBe(cpuIdx);
+      expect(room.game!.phase).toBe('shootout_anim');
+      expect(emit).toHaveBeenCalledWith('play:result', expect.any(Object));
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 });
 

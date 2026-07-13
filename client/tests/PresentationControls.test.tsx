@@ -10,6 +10,8 @@ describe('ScorePanel', () => {
     const view = render(
       <ScorePanel
         scores={[0, 0]}
+        possessionsCompleted={[1, 2]}
+        shootout={null}
         myIdx={0}
         players={[{ id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' }]}
         possessionIdx={0}
@@ -22,10 +24,14 @@ describe('ScorePanel', () => {
     );
 
     expect(screen.getByText('at own 25')).toBeTruthy();
+    expect(screen.getByTestId('possessions-0').textContent).toContain('1/4');
+    expect(screen.getByTestId('possessions-1').textContent).toContain('2/4');
 
     view.rerender(
       <ScorePanel
         scores={[0, 0]}
+        possessionsCompleted={[1, 2]}
+        shootout={null}
         myIdx={1}
         players={[{ id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' }]}
         possessionIdx={1}

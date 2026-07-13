@@ -154,8 +154,9 @@ export default function Tutorial() {
             Two players. Each <strong>drafts 6 position groups</strong> from a
             pool, then on every down both sides secretly call a play
             (<em>run/pass/punt/fg</em>) plus a sub-call. Plays resolve with
-            seeded skill rolls. Whoever is ahead by <span className="chip">2</span>{' '}
-            when someone reaches <span className="chip">3</span> points.
+            seeded skill rolls. Each team gets{' '}
+            <span className="chip">4 offensive possessions</span>. High score
+            wins; a tie goes to a paired field-goal shootout.
           </p>
         </section>
 
@@ -584,7 +585,7 @@ export default function Tutorial() {
         <section className="panel-flash">
           <div className="panel-titlebar">
             <span>6 · Scoring &amp; Win Condition</span>
-            <span className="text-xs">First to 3 by 2</span>
+            <span className="text-xs">4 possessions each</span>
           </div>
           <ul className="text-sm space-y-1 pl-4 list-disc">
             <li>
@@ -600,11 +601,53 @@ export default function Tutorial() {
               <span className="chip">+0.5</span> to the defense.
             </li>
             <li>
-              <strong>Win:</strong> leader has <span className="chip">≥ 3</span>{' '}
-              AND leads by <span className="chip">≥ 2</span>. Half-points mean
-              scores can be 2.5 vs 1.
+              <strong>Regulation:</strong> each team gets exactly{' '}
+              <span className="chip">4 completed offensive possessions</span>.
+              The higher score after both teams finish all four wins.
             </li>
           </ul>
+
+          <h3 className="font-black mt-4 mb-1">Possessions &amp; the counter</h3>
+          <p className="text-sm leading-snug">
+            The possession counter shows how many completed offensive
+            possessions each team has used, from <strong>0/4</strong> through{' '}
+            <strong>4/4</strong>. A possession ends on a touchdown, safety,
+            turnover, turnover on downs, punt, or <em>any</em> field-goal
+            attempt (made or missed). Regulation does not finish until both
+            counters reach 4/4.
+          </p>
+
+          <h3 className="font-black mt-4 mb-1">Tied game: FG shootout</h3>
+          <ul className="text-sm space-y-1 pl-4 list-disc">
+            <li>
+              Both teams manually kick from the same distance each round:
+              <strong> 25, 35, 45, 55, then 65 yards</strong>. Later rounds
+              repeat at 65 yards.
+            </li>
+            <li>
+              One make and one miss wins the game. If both make or both miss,
+              advance to the next round.
+            </li>
+            <li>
+              The team that had the first regulation possession kicks first
+              in round 1. Kicking order alternates every round.
+            </li>
+            <li>
+              Drafted kicker skill and QB field-goal buffs still apply. There
+              is no defensive call or block attempt.
+            </li>
+            <li>
+              Every shootout make adds <span className="chip">+0.5</span> to
+              that team's score.
+            </li>
+          </ul>
+
+          <h3 className="font-black mt-4 mb-1">Concede</h3>
+          <p className="text-sm leading-snug">
+            Either player may concede during the <strong>draft</strong>,{' '}
+            <strong>regulation</strong>, or the <strong>shootout</strong>.
+            Conceding ends the game and awards the win to the opponent.
+          </p>
         </section>
 
         {/* === AUDIBLES CHEAT SHEET === */}

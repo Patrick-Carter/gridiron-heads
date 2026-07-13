@@ -108,4 +108,31 @@ describe('HistoryPanel — history list', () => {
     const lastPlay = screen.getByTestId('last-play');
     expect(lastPlay.textContent).toMatch(/LAST PLAY/);
   });
+
+  it('labels shootout kicks without fabricating a defensive call', () => {
+    render(
+      <HistoryPanel
+        playResult={null}
+        history={[{
+          ...basePlayResult,
+          off_call: { parent: 'fg', sub: 'inside' },
+          def_call: { parent: 'fg', sub: 'inside' },
+          shootout_attempt: {
+            round: 2,
+            distance: 35,
+            player_idx: 0,
+            made: true,
+            power_roll: 40,
+            bonus_roll: 10,
+            total: 50,
+            power_used: 70,
+            seed: 42,
+          },
+        }]}
+      />,
+    );
+    expect(screen.getByText('SHOOTOUT KICK')).toBeTruthy();
+    expect(screen.getByText(/Round 2/)).toBeTruthy();
+    expect(screen.queryByText(/DEF:/)).toBeNull();
+  });
 });

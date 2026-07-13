@@ -74,12 +74,45 @@ export type GamePhase =
   | 'ready_to_snap'
   | 'play_anim'
   | 'between_plays'
+  | 'shootout_ready'
+  | 'shootout_anim'
+  | 'shootout_between'
   | 'ended';
+
+export interface ShootoutAttempt {
+  round: number;
+  distance: number;
+  player_idx: 0 | 1;
+  made: boolean;
+  power_roll: number;
+  bonus_roll: number;
+  total: number;
+  power_used: number;
+  seed: number;
+}
+
+export interface ShootoutState {
+  round: number;
+  distance: number;
+  first_kicker_idx: 0 | 1;
+  next_kicker_idx: 0 | 1;
+  round_attempts: [ShootoutAttempt | null, ShootoutAttempt | null];
+  attempts: ShootoutAttempt[];
+}
+
+export type MatchEndReason = 'regulation' | 'shootout' | 'concession';
+
+export interface MatchOutcome {
+  winner_idx: 0 | 1;
+  reason: MatchEndReason;
+  conceded_by_idx: 0 | 1 | null;
+}
 
 export interface GameState {
   session_id: string;
   phase: GamePhase;
   scores: [number, number]; // half-points allowed (D9)
+  possessions_completed: [number, number];
   down: 1 | 2 | 3 | 4;
   distance: number;
   ball_yardline: number; // 0..100
@@ -89,6 +122,7 @@ export interface GameState {
   fake_audibles_used: [number, number];
   history: PlayResult[];
   last_play_seed: number | null;
+  shootout: ShootoutState | null;
 }
 
 export type ScoringEvent = 'td' | 'fg' | 'safety' | null;
@@ -133,6 +167,8 @@ export interface PlayResult {
   play_outcome?: PlayOutcome;
   /** A failed fourth-down conversion, separate from the physical play outcome. */
   turnover_on_downs?: boolean;
+  /** Present when this result is a score-settling shootout kick. */
+  shootout_attempt?: ShootoutAttempt;
 
   // === Phase 0: roll-data plumbing (was discarded before — now exposed to client) ===
   /** Skill roll [0, off_skill_eff]. Higher = offense wins the play. Always present; 0 on punt/fg (no skill roll fired). On parent mismatch the roll is cosmetic — offense is auto-credited with the win. */

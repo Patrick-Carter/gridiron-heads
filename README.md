@@ -1,7 +1,8 @@
 # Gridiron Heads
 
 > 2-player head-to-head browser football. Draft asymmetric position groups, then play
-> simultaneous scheme picks with turn-based audibles. First to 3 (win by 2).
+> simultaneous scheme picks with turn-based audibles. Four possessions each; high
+> score wins, with a paired field-goal shootout for ties.
 
 Built with React + TypeScript + Tailwind on the front, Node + Express + Socket.IO +
 SQLite on the back. Game logic is shared pure TypeScript in `@gridiron/shared` so
@@ -16,7 +17,7 @@ npm install
 # dev — server :3000, client :5173 (Vite proxy to :3000 for /api + /socket.io)
 npm run dev
 
-# tests (106 tests across all workspaces)
+# tests (300 tests across all workspaces)
 npm test
 
 # prod build
@@ -56,7 +57,23 @@ node --import tsx scripts/cleanup_sessions.ts
 
 **Turnover chance:** full match 25%, parent-only 5%, mismatch 0%.
 
-**Win condition:** first to **3 points**, must **win by ≥2**. Field goals = 0.5 each.
+**Regulation and win condition:**
+- Each team gets exactly **4 completed offensive possessions**.
+- A possession ends on a TD, safety, turnover, turnover on downs, punt, or any FG
+  attempt (made or missed).
+- The possession counter tracks each team's completed possessions from 0/4 to 4/4.
+- After both teams complete all four possessions, the higher score wins.
+
+**Tied game — paired manual FG shootout:**
+- Both teams kick from the same distance each round: 25, 35, 45, 55, then 65 yards.
+  Additional rounds repeat at 65 yards.
+- One make and one miss decides the game; matching results advance to the next round.
+- The team with the first regulation possession kicks first in round 1. Order
+  alternates each round.
+- Drafted kicker skill and QB FG buffs apply. There is no defensive call or block.
+- Each shootout make adds 0.5 points.
+
+Players may **concede** during the draft, regulation, or shootout.
 
 ## Architecture
 
@@ -78,7 +95,7 @@ client/   # @gridiron/client — Vite + React + Tailwind
 - **Backend**: Node 22 + Express 4 + Socket.IO 4 + better-sqlite3 + nanoid + TypeScript 5
 - **Frontend**: Vite 5 + React 18 + TypeScript 5 + Tailwind 3 + Socket.IO client 4
 - **Rendering**: raw Canvas 2D API for the play field
-- **Testing**: Vitest — 106 tests across 12 files
+- **Testing**: Vitest — 300 tests across 25 files
 
 ## Agent / contributor notes
 
@@ -97,7 +114,7 @@ See `DECISIONS.md` for the append-only decision log (D-NNN format).
 | `shared/src/qb_pool.ts` | 22-QB pool (buffs only per D26), draw-3 per draft |
 | `shared/src/kicker.ts` | 2-roll FG resolver (power + bonus ∈ [0,20]) |
 | `shared/src/play_resolver.ts` | Skill roll + turnover + tiered yardage + yard-clamp |
-| `shared/src/scoring.ts` | Win-by-2 + 0.5 increment math |
+| `shared/src/scoring.ts` | Regulation/shootout winner checks + 0.5 increment math |
 | `shared/src/game_state.ts` | Downs, distance, ball spot (negative yards increase distance) |
 | `server/src/routes/sessions.ts` | HTTP `/api/sessions` create/join/get |
 | `server/src/socket/handlers.ts` | All Socket.IO event handlers |

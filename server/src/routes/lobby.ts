@@ -44,6 +44,7 @@ interface LiveGameEntry {
   phase: 'draft' | 'in_game' | 'ended';
   players: LobbyPlayer[];
   scores: [number, number];
+  winner_idx?: 0 | 1;
   updated_at: number;
 }
 
@@ -107,6 +108,17 @@ export function lobbyRouter(db: Database): Router {
 
       if (room) {
         // In-memory room is the live source of truth.
+        if (room.outcome) {
+          live.push({
+            session_id: row.id,
+            phase: 'ended',
+            players: room.players.map((p) => ({ id: p.id, name: p.name })),
+            scores: room.game?.scores ?? [0, 0],
+            winner_idx: room.outcome.winner_idx,
+            updated_at: room.last_activity_at,
+          });
+          continue;
+        }
         if (room.game) {
           // A room.game exists ⇢ the draft has started. Show as live.
           // (GameState.phase covers awaiting_schemes/…/play_anim/…/ended;

@@ -1,5 +1,4 @@
 // Scoring — half-point increments allowed (D9).
-// Win condition: leader has ≥3 AND lead ≥ 2.
 
 export function addPoints(
   scores: [number, number],
@@ -11,12 +10,22 @@ export function addPoints(
   return next;
 }
 
-export function checkWinner(scores: [number, number]): 0 | 1 | null {
-  const [a, b] = scores;
-  if (a === b) return null;
-  const leader: 0 | 1 = a > b ? 0 : 1;
-  const leader_score = leader === 0 ? a : b;
-  const diff = Math.abs(a - b);
-  if (leader_score >= 3 && diff >= 2) return leader;
-  return null;
+export type RegulationOutcome =
+  | { status: 'ongoing' }
+  | { status: 'shootout' }
+  | { status: 'winner'; winner_idx: 0 | 1 };
+
+export function evaluateRegulation(
+  scores: [number, number],
+  possessions_completed: [number, number],
+): RegulationOutcome {
+  if (possessions_completed[0] < 4 || possessions_completed[1] < 4) {
+    return { status: 'ongoing' };
+  }
+  if (scores[0] === scores[1]) return { status: 'shootout' };
+  return { status: 'winner', winner_idx: scores[0] > scores[1] ? 0 : 1 };
+}
+
+export function shootoutDistance(round: number): number {
+  return Math.min(65, 25 + Math.max(0, round - 1) * 10);
 }

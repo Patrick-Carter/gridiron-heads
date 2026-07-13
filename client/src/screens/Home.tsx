@@ -15,8 +15,8 @@ export default function Home() {
         <p className="text-base md:text-lg leading-snug">
           Draft <span className="font-bold">6 position groups</span>, pick
           plays <em>simultaneously</em>, then <strong>AUDIBLE</strong> at the
-          line. First to <span className="chip">3</span> with a
-          {' '}<span className="chip">2-point lead</span> wins!
+          line. Play <span className="chip">4 possessions each</span>; high
+          score wins, with a <span className="chip">FG shootout</span> for ties!
         </p>
 
         <ul className="text-sm space-y-1 pl-1">

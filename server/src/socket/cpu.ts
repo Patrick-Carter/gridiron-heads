@@ -32,6 +32,9 @@ import {
   snapshot,
   startGame,
   audibleLimit,
+  resolveShootoutKick,
+  nextActionPhase,
+  endMatch,
 } from './game_machine.js';
 import { touchRoom } from '../rooms.js';
 // Note: cpu.ts is a leaf — only handlers.ts imports it. No circular deps.
@@ -261,7 +264,7 @@ export function cpuSnap(io: IOServer, room: RoomState): void {
   const { result } = resolveCurrentPlay(room, seed);
 
   // D024 guard: don't overwrite 'ended' phase.
-  const gameEnded = (game.phase as string) === 'ended';
+  const gameEnded = !!room.outcome;
   if (!gameEnded) game.phase = 'play_anim';
 
   io.to(`session:${sid}`).emit('play:result', { result });
@@ -277,9 +280,44 @@ export function cpuSnap(io: IOServer, room: RoomState): void {
   }, 2000);
   setTimeout(() => {
     if (room.play_generation === generation && room.game?.phase === 'between_plays') {
-      room.game.phase = 'awaiting_schemes';
+      room.game.phase = nextActionPhase(room.game);
       clearSchemes(room);
       io.to(`session:${sid}`).emit('session:state', snapshot(room));
+      tickCpu(io, room);
+    }
+  }, 4500);
+}
+
+export function cpuShootoutKick(io: IOServer, room: RoomState, playerIdx: 0 | 1): void {
+  const game = room.game;
+  if (!game?.shootout || game.phase !== 'shootout_ready' || room.outcome) return;
+  if (room.players[playerIdx]?.id !== CPU_PLAYER_ID) return;
+  const sid = room.session_id;
+  const resolved = resolveShootoutKick(room, playerIdx, Math.floor(Math.random() * 2 ** 32));
+  if (!resolved.ok) return;
+  const generation = ++room.play_generation;
+  game.phase = 'shootout_anim';
+  touchRoom(room);
+  io.to(`session:${sid}`).emit('play:result', { result: resolved.result });
+  io.to(`session:${sid}`).emit('session:state', snapshot(room));
+  setTimeout(() => {
+    if (room.play_generation === generation && room.game?.phase === 'shootout_anim') {
+      room.game.phase = 'shootout_between';
+      touchRoom(room);
+      io.to(`session:${sid}`).emit('session:state', snapshot(room));
+    }
+  }, 2000);
+  setTimeout(() => {
+    if (room.play_generation === generation && room.game?.phase === 'shootout_between') {
+      if (room.pending_outcome) {
+        const pending = room.pending_outcome;
+        endMatch(room, pending.winner_idx, pending.reason, pending.conceded_by_idx);
+      } else {
+        room.game.phase = 'shootout_ready';
+      }
+      touchRoom(room);
+      io.to(`session:${sid}`).emit('session:state', snapshot(room));
+      if (!room.outcome) tickCpu(io, room);
     }
   }, 4500);
 }
@@ -293,6 +331,7 @@ export function cpuSnap(io: IOServer, room: RoomState): void {
 export function tickCpu(io: IOServer, room: RoomState, depth = 0): void {
   if (depth >= MAX_CPU_RECURSION) return;
   if (!room.cpu_player_id) return;
+  if (room.outcome) return;
   const cpuIdx = room.players.findIndex((p) => p.id === room.cpu_player_id);
   if (cpuIdx === -1) return;
 
@@ -322,6 +361,11 @@ export function tickCpu(io: IOServer, room: RoomState, depth = 0): void {
   const game = room.game;
   if (!game) return;
   const phase = game.phase;
+
+  if (phase === 'shootout_ready' && game.shootout?.next_kicker_idx === cpuIdx) {
+    cpuShootoutKick(io, room, cpuIdx as 0 | 1);
+    return;
+  }
 
   // Scheme pick phase. CPU may be offense, defense, or both (but in vs-CPU
   // mode only one is CPU). Pick for whichever side hasn't picked yet.

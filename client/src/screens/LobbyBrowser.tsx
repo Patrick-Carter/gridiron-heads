@@ -185,7 +185,9 @@ export default function LobbyBrowser() {
             const [s1, s2] = g.scores;
             const isFinal = g.phase === 'ended';
             const leaderIdx: 0 | 1 | null =
-              s1 === s2 ? null : s1 > s2 ? 0 : 1;
+              isFinal && g.winner_idx !== undefined
+                ? g.winner_idx
+                : s1 === s2 ? null : s1 > s2 ? 0 : 1;
             return (
               <li
                 key={g.session_id}

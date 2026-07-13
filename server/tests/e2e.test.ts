@@ -187,30 +187,17 @@ describe('2-player end-to-end flow', () => {
     expect(finalState.game.history.length).toBe(1);
   }, 30000);
 
-  // Regression: the snap handler used to unconditionally overwrite `game.phase`
-  // to 'play_anim' after resolveCurrentPlay, clobbering a freshly-set 'ended'
-  // phase (the win condition just got met). Both clients would then see
-  // 'play_anim' instead of the GameOver screen. This test drives enough plays
-  // for one player to plausibly win, then verifies the broadcasted phase is
-  // consistent with the win rule: if the win threshold is met, the phase MUST
-  // be 'ended' (not 'play_anim' / 'between_plays' / 'awaiting_schemes').
-  //
-  // To keep the test wall-clock bounded we give the offence a massive skill
-  // gap (100 vs 1) + mismatch parent every attempt, which makes ~80% of plays
-  // produce positive yards. With enough attempts, somebody crosses 3 with a
-  // 2-point lead.
-  it('does NOT clobber ended phase after a winning play (regression)', async () => {
-    // Fresh session for isolation
+  it('allows an authenticated player to concede during the draft', async () => {
     const createRes = await fetch(`http://localhost:${port}/api/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ display_name: 'WinnerHost' }),
+      body: JSON.stringify({ display_name: 'ConcedingHost' }),
     });
     const c = await createRes.json();
     const joinRes = await fetch(`http://localhost:${port}/api/sessions/${c.session_id}/join`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ display_name: 'LoserGuest' }),
+      body: JSON.stringify({ display_name: 'WinningGuest' }),
     });
     const j = await joinRes.json();
     const a = makeClient(port);
@@ -219,79 +206,23 @@ describe('2-player end-to-end flow', () => {
       new Promise<void>((r) => a.on('connect', () => r())),
       new Promise<void>((r) => b.on('connect', () => r())),
     ]);
-    a.emit('session:join', { session_id: c.session_id, auth_token: c.auth_token, display_name: 'WinnerHost' });
-    b.emit('session:join', { session_id: c.session_id, auth_token: j.auth_token, display_name: 'LoserGuest' });
+    a.emit('session:join', { session_id: c.session_id, auth_token: c.auth_token, display_name: 'ConcedingHost' });
+    b.emit('session:join', { session_id: c.session_id, auth_token: j.auth_token, display_name: 'WinningGuest' });
     await waitFor(a, 'session:state', (s) => s.players.length === 2);
+    const draftPromise = waitFor(a, 'session:state', (s) => s.draft != null);
     a.emit('session:ready');
     b.emit('session:ready');
-    const ds = await waitFor(a, 'session:state', (s) => s.draft != null);
-    // walk the draft
-    const playerLatest: Record<string, any> = { [c.player_id]: ds, [j.player_id]: ds };
-    const updateLatest = (pid: string, s: any) => { if (s) playerLatest[pid] = s; };
-    a.on('session:state', (s) => updateLatest(c.player_id, s));
-    b.on('session:state', (s) => updateLatest(j.player_id, s));
-    const gameDonePromise = waitFor(a, 'session:state', (s) => s && s.game && s.game.phase === 'awaiting_schemes');
-    const order = ds.draft.pick_order;
-    const groups = ['QB', 'D_LINE', 'O_LINE', 'OFF_SKILL', 'DEF_SKILL', 'KICKER'];
-    for (let i = 0; i < 12; i++) {
-      const playerId = order[i];
-      const sock = playerId === c.player_id ? a : b;
-      const latest = playerLatest[playerId];
-      const team = latest?.draft?.picks?.[playerId];
-      const group = groups.find((g) => (team as any)?.[g.toLowerCase()] == null)!;
-      const opt = latest?.draft?.pool?.[group]?.[0];
-      sock.emit('draft:pick', { group, option_id: opt.id });
-      await new Promise((r) => setTimeout(r, 25));
-    }
-    const gs = await gameDonePromise;
-    expect(gs.game.phase).toBe('awaiting_schemes');
-    // Track all session:state broadcasts; the bug was that the phase field of
-    // the broadcast came back as 'play_anim' even when win-condition was met.
-    // For EVERY broadcast during the loop, if the win rule is met, the phase
-    // MUST be 'ended'.
-    let bugCaught = false;
-    let gameEnded = false;
-    let broadcasts = 0;
-    a.on('session:state', (s) => {
-      broadcasts++;
-      if (!s?.game) return;
-      const phase = s.game.phase;
-      const scores = s.game.scores as [number, number];
-      if (scores[0] === scores[1]) return;
-      const winnerIdx = scores[0] > scores[1] ? 0 : 1;
-      const leader = scores[winnerIdx];
-      const diff = Math.abs(scores[0] - scores[1]);
-      const winConditionMet = leader >= 3 && diff >= 2;
-      if (winConditionMet && phase !== 'ended') {
-        bugCaught = true;
-      }
-      if (phase === 'ended') gameEnded = true;
-    });
-
-    // Drive plays until we either end the game or run out of attempts.
-    // Tighter bound: each attempt waits up to ~6.5s for the auto-advance.
-    const MAX_ATTEMPTS = 15;
-    for (let attempt = 0; attempt < MAX_ATTEMPTS && !gameEnded; attempt++) {
-      // wait for next awaiting_schemes (or ended)
-      const ready = await waitFor(a, 'session:state', (s) =>
-        s?.game?.phase === 'awaiting_schemes' || s?.game?.phase === 'ended');
-      if (!ready || !ready.game || ready.game.phase === 'ended') break;
-      const offIdx = ready.game.possession_idx;
-      const offPlayerId = ready.players[offIdx].id;
-      const defPlayerId = ready.players[1 - offIdx].id;
-      const offSock = offPlayerId === c.player_id ? a : b;
-      const defSock = defPlayerId === c.player_id ? a : b;
-      offSock.emit('game:scheme_pick', { parent: 'run', sub: 'inside' });
-      defSock.emit('game:scheme_pick', { parent: 'pass', sub: 'deep' });
-      await new Promise((r) => setTimeout(r, 80));
-      offSock.emit('game:snap');
-      await new Promise((r) => setTimeout(r, 5000)); // wait one auto-advance cycle
-    }
-    // assert: if the game ended, no broadcast ever violated the rule
-    expect(bugCaught).toBe(false);
+    expect(await draftPromise).toBeTruthy();
+    const hostOutcome = waitFor(a, 'session:state', (s) => s.outcome?.reason === 'concession');
+    const guestOutcome = waitFor(b, 'session:state', (s) => s.outcome?.reason === 'concession');
+    a.emit('session:concede');
+    const [hostState, guestState] = await Promise.all([hostOutcome, guestOutcome]);
+    expect(hostState.outcome).toEqual({ winner_idx: 1, reason: 'concession', conceded_by_idx: 0 });
+    expect(guestState.outcome).toEqual(hostState.outcome);
+    expect(hostState.game).toBeNull();
     a.disconnect();
     b.disconnect();
-  }, 180000);
+  }, 30000);
 
   it('rejects draft pick from wrong player', async () => {
     // open a fresh session for this isolation test

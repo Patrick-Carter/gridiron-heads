@@ -72,6 +72,7 @@ export interface LobbyLiveEntry {
   phase: 'draft' | 'in_game' | 'ended';
   players: { id: string; name: string }[];
   scores: [number, number];
+  winner_idx?: 0 | 1;
   updated_at: number;
 }
 

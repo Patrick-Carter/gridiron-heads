@@ -55,7 +55,7 @@ function SessionInner({
     );
   }
 
-  if (state.game?.phase === 'ended') {
+  if (state.outcome) {
     return (
       <GameOver
         state={state}

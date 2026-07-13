@@ -34,5 +34,7 @@ export const EVENTS = {
   DEF_STAY: 'game:def_stay',
   SNAP: 'game:snap',
   NEXT_PLAY: 'game:next_play',
+  SHOOTOUT_KICK: 'game:shootout_kick',
+  CONCEDE: 'session:concede',
   PLAY_RESULT: 'play:result',
 } as const;

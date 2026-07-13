@@ -10,7 +10,8 @@ import {
   resolvePlay,
   attemptFieldGoal,
   addPoints,
-  checkWinner,
+  evaluateRegulation,
+  shootoutDistance,
   mulberry32,
   flipPossession,
   offenseDirection,
@@ -27,6 +28,8 @@ import type {
   PositionGroup,
   PositionOption,
   QBOption,
+  MatchOutcome,
+  ShootoutAttempt,
 } from '@gridiron/shared';
 
 export interface RoomState {
@@ -38,6 +41,10 @@ export interface RoomState {
   first_possession_id: string | null;
   draft: DraftState | null;
   game: GameState | null;
+  /** Authoritative terminal result. Kept at room level so draft concessions work. */
+  outcome: MatchOutcome | null;
+  /** Decisive kick result waiting for its animation to finish. */
+  pending_outcome: MatchOutcome | null;
   /** Random draft seed (also used to generate deterministic draft). */
   draft_seed: number;
   /** Scheme picks not yet revealed: player_id → Play */
@@ -75,6 +82,8 @@ export function newRoom(
     first_possession_id: null,
     draft: null,
     game: null,
+    outcome: null,
+    pending_outcome: null,
     draft_seed: Math.floor(Math.random() * 2 ** 32),
     pending_schemes: {},
     audible_state: 'none',
@@ -280,6 +289,192 @@ export function audibleLimit(team: TeamState, kind: 'real' | 'fake'): number {
   return 1 + (modifier?.stat === stat ? modifier.value : 0);
 }
 
+export function endMatch(
+  room: RoomState,
+  winner_idx: 0 | 1,
+  reason: MatchOutcome['reason'],
+  conceded_by_idx: 0 | 1 | null = null,
+): void {
+  if (room.outcome) return;
+  room.pending_outcome = null;
+  room.outcome = { winner_idx, reason, conceded_by_idx };
+  room.play_generation++;
+  clearSchemes(room);
+  if (room.game) {
+    clearAudibles(room.game);
+    room.game.phase = 'ended';
+  }
+  room.players.forEach((player) => { player.ready = !!player.is_cpu; });
+}
+
+export function concedeMatch(
+  room: RoomState,
+  player_id: string,
+): { ok: true } | { ok: false; reason: string } {
+  if (room.outcome) return { ok: false, reason: 'match_ended' };
+  if (room.pending_outcome) return { ok: false, reason: 'match_finishing' };
+  if (!room.draft) return { ok: false, reason: 'match_not_started' };
+  const player_idx = room.players.findIndex((player) => player.id === player_id);
+  if (player_idx !== 0 && player_idx !== 1) return { ok: false, reason: 'unknown_player' };
+  if (room.players[player_idx].is_cpu) return { ok: false, reason: 'cpu_id_reserved' };
+  const conceded_by_idx = player_idx as 0 | 1;
+  endMatch(room, conceded_by_idx === 0 ? 1 : 0, 'concession', conceded_by_idx);
+  return { ok: true };
+}
+
+function setShootoutSpot(game: GameState, kicker_idx: 0 | 1): void {
+  const distance = game.shootout!.distance;
+  game.possession_idx = kicker_idx;
+  game.ball_yardline = kicker_idx === 0 ? 100 - distance : distance;
+  game.down = 1;
+  game.distance = distance;
+}
+
+function startShootout(room: RoomState): void {
+  const game = room.game!;
+  const first_kicker_idx: 0 | 1 = room.players[0].id === room.first_possession_id ? 0 : 1;
+  game.shootout = {
+    round: 1,
+    distance: shootoutDistance(1),
+    first_kicker_idx,
+    next_kicker_idx: first_kicker_idx,
+    round_attempts: [null, null],
+    attempts: [],
+  };
+  clearSchemes(room);
+  clearAudibles(game);
+  setShootoutSpot(game, first_kicker_idx);
+}
+
+function completeRegulationPossession(room: RoomState, offense_idx: 0 | 1): void {
+  const game = room.game!;
+  game.possessions_completed[offense_idx]++;
+  const outcome = evaluateRegulation(game.scores, game.possessions_completed);
+  if (outcome.status === 'winner') {
+    endMatch(room, outcome.winner_idx, 'regulation');
+  } else if (outcome.status === 'shootout') {
+    startShootout(room);
+    game.phase = 'between_plays';
+  } else {
+    game.phase = 'between_plays';
+  }
+}
+
+export function nextActionPhase(game: GameState): 'awaiting_schemes' | 'shootout_ready' {
+  return game.shootout ? 'shootout_ready' : 'awaiting_schemes';
+}
+
+export function resolveShootoutKick(
+  room: RoomState,
+  player_idx: 0 | 1,
+  seed: number,
+): { ok: true; result: PlayResult } | { ok: false; reason: string } {
+  const game = room.game;
+  if (!game || !game.shootout) return { ok: false, reason: 'no_shootout' };
+  if (room.outcome || game.phase === 'ended') return { ok: false, reason: 'match_ended' };
+  if (game.phase !== 'shootout_ready') return { ok: false, reason: 'shootout_not_ready' };
+  if (game.shootout.next_kicker_idx !== player_idx) return { ok: false, reason: 'not_your_kick' };
+
+  const shootout = game.shootout;
+  const team = game.teams[player_idx];
+  const qb_modifiers = team.qb ? [team.qb.modifier] : [];
+  const fg = attemptFieldGoal({
+    yards_to_endzone: shootout.distance,
+    kicker_power: team.kicker?.skill ?? 70,
+    seed,
+    qb_modifiers,
+  });
+  const attempt: ShootoutAttempt = {
+    round: shootout.round,
+    distance: shootout.distance,
+    player_idx,
+    made: fg.make,
+    power_roll: fg.power_roll,
+    bonus_roll: fg.bonus_roll,
+    total: fg.total,
+    power_used: fg.power_used,
+    seed,
+  };
+  if (fg.make) game.scores = addPoints(game.scores, player_idx, 0.5);
+
+  const kickCall: Play = { parent: 'fg', sub: 'inside' };
+  const offense_direction: 1 | -1 = player_idx === 0 ? 1 : -1;
+  const result: PlayResult = {
+    down: 1,
+    distance: shootout.distance,
+    yardline_before: game.ball_yardline,
+    yardline_after: game.ball_yardline,
+    off_call: kickCall,
+    def_call: kickCall,
+    off_audible: null,
+    def_audible: null,
+    off_fake_audible: false,
+    parent_match: false,
+    sub_match: false,
+    turnover: false,
+    yards: 0,
+    scoring_event: fg.make ? 'fg' : null,
+    seed,
+    offense_direction,
+    effective_off_call: kickCall,
+    effective_def_call: kickCall,
+    play_outcome: fg.make ? 'field_goal_good' : 'field_goal_missed',
+    turnover_on_downs: false,
+    shootout_attempt: attempt,
+    text_recap: fg.make
+      ? `SHOOTOUT KICK IS GOOD! (${fg.total} > ${shootout.distance})`
+      : `Shootout kick missed (${fg.total} ≤ ${shootout.distance})`,
+    off_roll: 0,
+    def_roll: 0,
+    off_skill_eff: 0,
+    def_skill_eff: 0,
+    off_line_roll: 0,
+    def_line_roll: 0,
+    off_line_skill: 0,
+    def_line_skill: 0,
+    line_winner: null,
+    line_regime: null,
+    line_roll_gap: 0,
+    fg_power_roll: fg.power_roll,
+    fg_bonus_roll: fg.bonus_roll,
+    fg_total: fg.total,
+    fg_power_eff: fg.power_used,
+  };
+  shootout.round_attempts[player_idx] = attempt;
+  shootout.attempts.push(attempt);
+  game.history.push(result);
+  game.last_play_seed = seed;
+
+  const first = shootout.round_attempts[shootout.first_kicker_idx];
+  const second_idx: 0 | 1 = shootout.first_kicker_idx === 0 ? 1 : 0;
+  const second = shootout.round_attempts[second_idx];
+  if (!first || !second) {
+    shootout.next_kicker_idx = second_idx;
+    setShootoutSpot(game, second_idx);
+    game.phase = 'shootout_between';
+    return { ok: true, result };
+  }
+
+  if (first.made !== second.made) {
+    room.pending_outcome = {
+      winner_idx: first.made ? first.player_idx : second.player_idx,
+      reason: 'shootout',
+      conceded_by_idx: null,
+    };
+    game.phase = 'shootout_between';
+    return { ok: true, result };
+  }
+
+  shootout.round++;
+  shootout.distance = shootoutDistance(shootout.round);
+  shootout.first_kicker_idx = second_idx;
+  shootout.next_kicker_idx = second_idx;
+  shootout.round_attempts = [null, null];
+  setShootoutSpot(game, second_idx);
+  game.phase = 'shootout_between';
+  return { ok: true, result };
+}
+
 /** Resolve a play given current scheme + audible state. Returns PlayResult. */
 export function resolveCurrentPlay(room: RoomState, seed: number): {
   result: PlayResult;
@@ -391,11 +586,7 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     clearSchemes(room);
     game.history.push(result);
     game.last_play_seed = seed;
-    const winner = checkWinner(game.scores);
-    if (winner !== null) {
-      game.phase = 'ended';
-      room.players.forEach((player) => { player.ready = !!player.is_cpu; });
-    } else game.phase = 'between_plays';
+    completeRegulationPossession(room, offIdx);
     return { result, scoring_event: made ? 'fg' : null };
   }
 
@@ -468,11 +659,7 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     clearSchemes(room);
     game.history.push(result);
     game.last_play_seed = seed;
-    const winner = checkWinner(game.scores);
-    if (winner !== null) {
-      game.phase = 'ended';
-      room.players.forEach((player) => { player.ready = !!player.is_cpu; });
-    } else game.phase = 'between_plays';
+    completeRegulationPossession(room, offIdx);
     return { result, scoring_event: null };
   }
 
@@ -621,11 +808,8 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   clearSchemes(room);
   game.history.push(result);
   game.last_play_seed = seed;
-  const winner = checkWinner(game.scores);
-  if (winner !== null) {
-    game.phase = 'ended';
-    room.players.forEach((player) => { player.ready = !!player.is_cpu; });
-  } else game.phase = 'between_plays';
+  if (change_of_possession) completeRegulationPossession(room, offIdx);
+  else game.phase = 'between_plays';
   return { result, scoring_event };
 }
 
@@ -703,6 +887,7 @@ export function snapshot(room: RoomState): any {
       done: room.draft.current_turn,
     },
     game,
+    outcome: room.outcome,
     pending_schemes,
   };
 }

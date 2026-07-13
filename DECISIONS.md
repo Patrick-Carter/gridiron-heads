@@ -341,3 +341,25 @@ Manual smoke: 2 browser sessions needed to verify both teams. Pending.
 2. `151830f` — server play resolution
 3. `b9601d0` — client renderer + HUD
 4. `86a3dec` — direction-aware tests
+
+## D033 — 2026-07-13 — Four-possession regulation and paired FG shootout (ACCEPTED)
+**Decision:** Each team receives exactly four completed offensive possessions in
+regulation. A possession ends on a touchdown, safety, turnover, turnover on downs,
+punt, or any field-goal attempt, whether made or missed. After both teams complete
+four possessions, the higher score wins.
+
+If regulation is tied, play a paired manual field-goal shootout. Both teams kick at
+the same distance each round: 25, 35, 45, 55, and 65 yards, then 65 yards again for
+every later round. One make and one miss decides the game; if both make or both miss,
+advance to the next round. The team that had the first regulation possession kicks
+first in round 1, and kicking order alternates each round.
+
+Drafted kicker skill and QB field-goal buffs apply during the shootout. There is no
+defensive call or block attempt. Every shootout make adds 0.5 points. A player may
+concede during the draft, regulation, or shootout.
+
+**Supersedes:** D003's first-to-3, win-by-2 condition. D003 remains in this append-only
+log as historical context; the 0.5-point value for made field goals is retained.
+**Rationale:** A fixed, equal number of regulation possessions gives both teams a
+complete opportunity to score, while paired kicks resolve ties under equal distances
+and alternating order.

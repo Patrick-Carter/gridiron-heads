@@ -9,6 +9,8 @@ import RosterModal from '../components/RosterModal.js';
 import ResultsPanel from '../components/ResultsPanel.js';
 import HistoryPanel from '../components/HistoryPanel.js';
 import TdConfetti from '../components/TdConfetti.js';
+import ConcedeControl from '../components/ConcedeControl.js';
+import ShootoutPanel from '../components/ShootoutPanel.js';
 import {
   initAudio,
   playSnap,
@@ -39,7 +41,7 @@ import {
 } from '../audio/crowd.js';
 import type { PlayEffect } from '../components/playAnimation.js';
 import type { SessionSnapshot } from '../hooks/useSession.js';
-import type { Play, PlayResult } from '@gridiron/shared';
+import type { Play, PlayResult, ShootoutState } from '@gridiron/shared';
 
 export default function Game({
   state,
@@ -58,6 +60,23 @@ export default function Game({
   const players = state.players;
   const myIdx = players.findIndex((p) => p.id === meId) as 0 | 1;
   const isOffense = myIdx === game.possession_idx;
+  const isShootout = game.phase.startsWith('shootout_');
+  let displayShootout: ShootoutState | null = isShootout ? game.shootout : null;
+  const animatedAttempt = (game.phase === 'shootout_anim' || game.phase === 'shootout_between')
+    ? lastPlayResult?.shootout_attempt
+    : null;
+  if (displayShootout && animatedAttempt) {
+    const roundAttempts: ShootoutState['round_attempts'] = [null, null];
+    for (const attempt of displayShootout.attempts) {
+      if (attempt.round === animatedAttempt.round) roundAttempts[attempt.player_idx] = attempt;
+    }
+    displayShootout = {
+      ...displayShootout,
+      round: animatedAttempt.round,
+      distance: animatedAttempt.distance,
+      round_attempts: roundAttempts,
+    };
+  }
   const opponentId = players.find((p) => p.id !== meId)?.id;
   const opponentScheme = state.pending_schemes?.[opponentId ?? ''] ?? null;
   const [isAnimating, setIsAnimating] = useState(false);
@@ -201,6 +220,8 @@ export default function Game({
     >
       <ScorePanel
         scores={game.scores}
+        possessionsCompleted={game.possessions_completed}
+        shootout={displayShootout}
         myIdx={myIdx}
         players={players}
         possessionIdx={game.possession_idx}
@@ -245,6 +266,15 @@ export default function Game({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
         {/* Left: phase-based play call controls */}
         <div className="space-y-3">
+          {isShootout && displayShootout && (
+            <ShootoutPanel
+              shootout={displayShootout}
+              players={players}
+              myIdx={myIdx}
+              ready={game.phase === 'shootout_ready'}
+              onKick={() => { initAudio(); send(EVENTS.SHOOTOUT_KICK); }}
+            />
+          )}
           {game.phase === 'awaiting_schemes' && !hasPendingMyScheme && (
             <SchemePicker
               onPick={(parent, sub) => send(EVENTS.SCHEME_PICK, { parent, sub })}
@@ -331,7 +361,8 @@ export default function Game({
             </div>
           )}
 
-          {(game.phase === 'between_plays' || game.phase === 'play_anim') && (
+          {(game.phase === 'between_plays' || game.phase === 'play_anim'
+            || game.phase === 'shootout_between' || game.phase === 'shootout_anim') && (
             <button
               onClick={() => {
                 setLastPlayResult(null);
@@ -342,12 +373,12 @@ export default function Game({
               ⏭ Skip Wait
             </button>
           )}
-          {game.phase === 'play_anim' && (
+          {(game.phase === 'play_anim' || game.phase === 'shootout_anim') && (
             <div className="text-center text-xs text-cream/80 animate-pulse">
               📺 Play animating…
             </div>
           )}
-          {game.phase === 'between_plays' && (
+          {(game.phase === 'between_plays' || game.phase === 'shootout_between') && (
             <div className="text-center text-xs text-cream/80">
               ⏱ Next play in ~2.5s
             </div>
@@ -368,6 +399,10 @@ export default function Game({
         playResult={lastPlayResult}
         history={game.history || []}
       />
+
+      <div className="max-w-sm mx-auto w-full">
+        <ConcedeControl onConcede={() => send(EVENTS.CONCEDE)} />
+      </div>
 
       {/* Roster overlay — D031: click a player name to inspect their team's
           6-group roster. Dismiss with ESC / X / backdrop click, or flip to

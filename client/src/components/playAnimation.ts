@@ -207,7 +207,7 @@ function puntRoster(offenseTeam: 0 | 1, defenseTeam: 0 | 1): BasePlayer[] {
   return p;
 }
 
-function fieldGoalRoster(offenseTeam: 0 | 1, defenseTeam: 0 | 1): BasePlayer[] {
+function fieldGoalRoster(offenseTeam: 0 | 1, defenseTeam: 0 | 1, shootout = false): BasePlayer[] {
   const p: BasePlayer[] = [];
   addPlayer(p, 'offense', offenseTeam, 'LS', 0, 0, 0.5);
   [0.33, 0.385, 0.44, 0.56, 0.615, 0.67, 0.725].forEach((y, slot) => addPlayer(p, 'offense', offenseTeam, 'OL', slot, 0, y));
@@ -215,9 +215,11 @@ function fieldGoalRoster(offenseTeam: 0 | 1, defenseTeam: 0 | 1): BasePlayer[] {
   addPlayer(p, 'offense', offenseTeam, 'K', 0, -10, 0.43);
   addPlayer(p, 'offense', offenseTeam, 'TE', 0, -0.5, 0.275);
 
-  [0.33, 0.385, 0.44, 0.5, 0.56, 0.615, 0.67].forEach((y, slot) => addPlayer(p, 'defense', defenseTeam, 'DL', slot, 0.8, y));
-  [0.22, 0.5, 0.78].forEach((y, slot) => addPlayer(p, 'defense', defenseTeam, 'LB', slot, 3, y));
-  addPlayer(p, 'defense', defenseTeam, 'S', 0, 8, 0.5);
+  if (!shootout) {
+    [0.33, 0.385, 0.44, 0.5, 0.56, 0.615, 0.67].forEach((y, slot) => addPlayer(p, 'defense', defenseTeam, 'DL', slot, 0.8, y));
+    [0.22, 0.5, 0.78].forEach((y, slot) => addPlayer(p, 'defense', defenseTeam, 'LB', slot, 3, y));
+    addPlayer(p, 'defense', defenseTeam, 'S', 0, 8, 0.5);
+  }
   return p;
 }
 
@@ -353,8 +355,10 @@ function makeEvents(result: PlayAnimationResult, call: Play, outcome: PlayOutcom
     events.push({ tick: 30, type: outcome === 'punt_blocked' ? 'impact' : 'kick', xOffset: -13, y: 0.5, intensity: 0.9 });
     if (outcome === 'punt_blocked') events.push({ tick: 39, type: 'bounce', xOffset: -2, y: f.bounceY, intensity: 1 });
   } else {
-    events.push({ tick: 10, type: 'block', xOffset: 0.4, y: 0.41, intensity: 0.58 });
-    events.push({ tick: 20, type: 'block', xOffset: 0.7, y: 0.59, intensity: 0.72 });
+    if (!result.shootout_attempt) {
+      events.push({ tick: 10, type: 'block', xOffset: 0.4, y: 0.41, intensity: 0.58 });
+      events.push({ tick: 20, type: 'block', xOffset: 0.7, y: 0.59, intensity: 0.72 });
+    }
     events.push({ tick: 28, type: outcome === 'field_goal_blocked' ? 'impact' : 'kick', xOffset: -7, y: 0.5, intensity: 0.9 });
     if (outcome === 'field_goal_blocked') events.push({ tick: 38, type: 'bounce', xOffset: -1, y: f.bounceY, intensity: 1 });
   }
@@ -563,11 +567,16 @@ function animatePunt(ctx: FrameContext, tick: number, players: PlayerSprite[]): 
 
 function animateFieldGoal(ctx: FrameContext, tick: number, players: PlayerSprite[]): BallState {
   const blocked = ctx.outcome === 'field_goal_blocked';
+  const shootout = !!ctx.result.shootout_attempt;
   players.filter((p) => p.side === 'offense' && (p.role === 'OL' || p.role === 'LS' || p.role === 'TE')).forEach((p) => {
     setSprite(p, lerp(p.xOffset, 0.7, smooth(phase(tick, 5, 25))), p.y, tick < 5 ? 'stance' : 'block');
   });
   players.filter((p) => p.side === 'defense').forEach((p, i) => {
-    setSprite(p, lerp(p.xOffset, blocked && i === 3 ? -5 : -0.8, smooth(phase(tick, 5 + (i % 3), 34))), lerp(p.y, 0.5 + ((i % 5) - 2) * 0.045, 0.5), blocked && i === 3 && tick > 25 && tick < 36 ? 'dive' : runPose(tick));
+    if (shootout) {
+      setSprite(p, p.xOffset, p.y, 'stance');
+    } else {
+      setSprite(p, lerp(p.xOffset, blocked && i === 3 ? -5 : -0.8, smooth(phase(tick, 5 + (i % 3), 34))), lerp(p.y, 0.5 + ((i % 5) - 2) * 0.045, 0.5), blocked && i === 3 && tick > 25 && tick < 36 ? 'dive' : runPose(tick));
+    }
   });
   const holder = sprite(players, 'offense', 'H', 0);
   const kicker = sprite(players, 'offense', 'K', 0);
@@ -630,7 +639,7 @@ export function buildPlayPlan(result: PlayAnimationResult, possessionIdx: 0 | 1)
   const roster = call.parent === 'punt'
     ? puntRoster(offenseTeam, defenseTeam)
     : call.parent === 'fg'
-      ? fieldGoalRoster(offenseTeam, defenseTeam)
+      ? fieldGoalRoster(offenseTeam, defenseTeam, !!result.shootout_attempt)
       : standardRoster(offenseTeam, defenseTeam, jitter);
   const banner = makeBanner(result, outcome);
   const effects = makeEvents(result, call, outcome, flavor);
