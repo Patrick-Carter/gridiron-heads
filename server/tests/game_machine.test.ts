@@ -412,6 +412,16 @@ describe('Play resolution', () => {
         expect(result.down).toBe(4);
         expect(result.distance).toBe(99);
         expect(result.turnover).toBe(true);
+        expect(result.turnover_on_downs).toBe(true);
+        expect(result.play_outcome).toBe(
+          result.effective_off_call?.parent === 'run'
+            ? 'run'
+            : result.yards < 0
+              ? 'pass_sack'
+              : result.yards === 0
+                ? 'pass_incomplete'
+                : 'pass_complete',
+        );
         expect(result.text_recap).toContain('TURNOVER ON DOWNS');
         expect(r.game!.down).toBe(1);
         expect(r.game!.distance).toBe(10);
@@ -452,6 +462,26 @@ describe('Play resolution', () => {
     expect(tos / N).toBeLessThan(0.32);
   });
 
+  it.each([
+    { parent: 'run' as const, sub: 'inside' as const, outcome: 'fumble' as const },
+    { parent: 'pass' as const, sub: 'deep' as const, outcome: 'interception' as const },
+  ])('labels a $parent turnover as $outcome for animation', ({ parent, sub, outcome }) => {
+    let found = false;
+    for (let seed = 1; seed < 300 && !found; seed++) {
+      const r = setupReadyToSnapRoom();
+      r.pending_schemes[r.players[0].id] = { parent, sub };
+      r.pending_schemes[r.players[1].id] = { parent, sub };
+      const { result } = resolveCurrentPlay(r, seed);
+      if (result.play_outcome === outcome) {
+        expect(result.turnover).toBe(true);
+        expect(result.turnover_on_downs).toBe(false);
+        expect(result.effective_off_call).toEqual({ parent, sub });
+        found = true;
+      }
+    }
+    expect(found).toBe(true);
+  });
+
   it('FG made → adds 0.5 points + possession change', () => {
     const room = setupReadyToSnapRoom();
     room.pending_schemes[room.players[0].id] = { parent: 'fg', sub: 'deep' };
@@ -466,6 +496,7 @@ describe('Play resolution', () => {
       const offIdx = r.game!.possession_idx;
       const { result, scoring_event } = resolveCurrentPlay(r, s);
       if (scoring_event === 'fg') {
+        expect(result.play_outcome).toBe('field_goal_good');
         expect(r.game!.scores[offIdx]).toBe(0.5);
         // After FG, opposing team takes ball at their own 25 — dir-aware
         // absolute spot (kickoffYardline of the NEW offense's direction).
@@ -492,6 +523,7 @@ describe('Play resolution', () => {
         expect(result.scoring_event).toBeNull();
         expect(r.game!.scores[0]).toBe(0);
         expect(result.turnover).toBe(true);
+        expect(result.play_outcome).toBe('field_goal_blocked');
         found = true;
       }
     }
@@ -512,6 +544,7 @@ describe('Play resolution', () => {
       r.pending_schemes[r.players[defIdx].id] = { parent: 'run', sub: 'inside' };
       const { result } = resolveCurrentPlay(r, seed);
       if (!result.text_recap.includes('BLOCKED')) {
+        expect(result.play_outcome).toBe('punt');
         expect(result.yardline_after).toBe(receivingFive);
         expect(result.yards).toBe(5);
         expect(result.turnover).toBe(true);
@@ -543,6 +576,7 @@ describe('Play resolution', () => {
       r.pending_schemes[r.players[1].id] = { parent: 'punt', sub: 'short' };
       const { result } = resolveCurrentPlay(r, seed);
       if (result.text_recap.includes('BLOCKED')) {
+        expect(result.play_outcome).toBe('punt_blocked');
         expect(result.yardline_after).toBe(98);
         expect(result.yards).toBe(0);
         expect(result.punt_roll).toBe(0);

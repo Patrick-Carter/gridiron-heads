@@ -54,6 +54,15 @@ function verdictText(p: PlayResult): { label: string; tone: 'good' | 'bad' | 'ne
   if (p.scoring_event === 'td') return { label: 'TOUCHDOWN!', tone: 'good' };
   if (p.scoring_event === 'fg') return { label: 'FIELD GOAL GOOD', tone: 'good' };
   if (p.scoring_event === 'safety') return { label: 'SAFETY', tone: 'bad' };
+  if (p.turnover_on_downs) return { label: 'TURNOVER ON DOWNS', tone: 'bad' };
+  if (p.play_outcome === 'interception') return { label: 'INTERCEPTION', tone: 'bad' };
+  if (p.play_outcome === 'fumble') return { label: 'FUMBLE LOST', tone: 'bad' };
+  if (p.play_outcome === 'pass_sack') return { label: 'SACK', tone: 'bad' };
+  if (p.play_outcome === 'pass_incomplete') return { label: 'INCOMPLETE PASS', tone: 'neutral' };
+  if (p.play_outcome === 'punt_blocked') return { label: 'PUNT BLOCKED', tone: 'bad' };
+  if (p.play_outcome === 'punt') return { label: 'PUNT AWAY', tone: 'neutral' };
+  if (p.play_outcome === 'field_goal_blocked') return { label: 'FIELD GOAL BLOCKED', tone: 'bad' };
+  if (p.play_outcome === 'field_goal_missed') return { label: 'FIELD GOAL NO GOOD', tone: 'bad' };
   if (p.turnover) return { label: 'TURNOVER — DEFENSE READ IT', tone: 'bad' };
   if (p.line_regime === 'dominate') {
     if (p.line_winner === 'offense') return { label: 'LINE DOMINATES — BLOWN OPEN', tone: 'good' };
@@ -144,6 +153,7 @@ function MatchupRect({
 /** FG-specific matchup: KICKER power+bonus=total vs YTG. */
 function FgMatchupRect({ p, visible }: { p: PlayResult; visible: boolean }) {
   const made = p.scoring_event === 'fg';
+  const blocked = p.play_outcome === 'field_goal_blocked';
   const ytg = p.offense_direction === 1
     ? Math.max(0, 100 - p.yardline_before)
     : Math.max(0, p.yardline_before);
@@ -167,7 +177,7 @@ function FgMatchupRect({ p, visible }: { p: PlayResult; visible: boolean }) {
         <span className={CHIP_NEUTRAL}>YTG</span>
       </div>
       <div className={`text-sm font-black mt-1 ${made ? 'text-ok' : 'text-maroon'}`}>
-        {made ? '✓ MAKE' : '✗ MISS'}
+        {made ? '✓ MAKE' : blocked ? '✗ BLOCKED' : '✗ MISS'}
       </div>
     </div>
   );
@@ -182,7 +192,9 @@ function PuntMatchupRect({ p, visible }: { p: PlayResult; visible: boolean }) {
       data-testid="matchup-punt"
     >
       <div className="flex items-center gap-2 font-black tabular-nums text-base w-full justify-center flex-wrap">
-        <span className="chip !bg-grape !text-cream text-xs">PUNT</span>
+        <span className="chip !bg-grape !text-cream text-xs">
+          {p.play_outcome === 'punt_blocked' ? 'BLOCKED PUNT' : 'PUNT'}
+        </span>
         <span style={{ color: '#0a0a18' }} data-testid="punt-yards">
           +{p.punt_roll ?? '--'}
         </span>

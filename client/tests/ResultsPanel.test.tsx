@@ -187,4 +187,16 @@ describe('ResultsPanel — verdict + result', () => {
     render(<ResultsPanel playResult={toResult} progress={1} />);
     expect(screen.getByTestId('roll-verdict').textContent).toMatch(/TURNOVER/i);
   });
+
+  it.each([
+    ['interception', 'INTERCEPTION'],
+    ['fumble', 'FUMBLE LOST'],
+    ['pass_sack', 'SACK'],
+    ['pass_incomplete', 'INCOMPLETE PASS'],
+    ['punt_blocked', 'PUNT BLOCKED'],
+    ['field_goal_missed', 'FIELD GOAL NO GOOD'],
+  ])('renders the exact %s outcome', (play_outcome, label) => {
+    render(<ResultsPanel playResult={{ ...basePlayResult, play_outcome }} progress={1} />);
+    expect(screen.getByTestId('roll-verdict').textContent).toContain(label);
+  });
 });

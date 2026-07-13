@@ -25,7 +25,7 @@ import {
 } from '../audio/synth.js';
 import { playCrowdRoar, isBigPlay } from '../audio/crowd.js';
 import type { SessionSnapshot } from '../hooks/useSession.js';
-import type { Play } from '@gridiron/shared';
+import type { Play, PlayResult } from '@gridiron/shared';
 
 export default function Game({
   state,
@@ -37,8 +37,8 @@ export default function Game({
   state: SessionSnapshot;
   meId: string;
   send: (e: string, p?: any) => void;
-  lastPlayResult: any | null;
-  setLastPlayResult: (r: any | null) => void;
+  lastPlayResult: PlayResult | null;
+  setLastPlayResult: (r: PlayResult | null) => void;
 }) {
   const game = state.game!;
   const players = state.players;

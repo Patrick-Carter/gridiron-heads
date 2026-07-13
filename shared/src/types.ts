@@ -93,6 +93,19 @@ export interface GameState {
 
 export type ScoringEvent = 'td' | 'fg' | 'safety' | null;
 
+export type PlayOutcome =
+  | 'run'
+  | 'fumble'
+  | 'pass_complete'
+  | 'pass_incomplete'
+  | 'pass_sack'
+  | 'interception'
+  | 'punt'
+  | 'punt_blocked'
+  | 'field_goal_good'
+  | 'field_goal_missed'
+  | 'field_goal_blocked';
+
 export interface PlayResult {
   down: number;
   distance: number;
@@ -113,6 +126,13 @@ export interface PlayResult {
   /** Direction of attack for the offense at the time of the play:
    *  +1 = attacking toward yardline 100 (right); -1 = attacking toward 0 (left). */
   offense_direction: 1 | -1;
+  /** Calls after real audibles are applied. Optional for persisted pre-D results. */
+  effective_off_call?: Play;
+  effective_def_call?: Play;
+  /** Exact football event used by the client play simulation. */
+  play_outcome?: PlayOutcome;
+  /** A failed fourth-down conversion, separate from the physical play outcome. */
+  turnover_on_downs?: boolean;
 
   // === Phase 0: roll-data plumbing (was discarded before — now exposed to client) ===
   /** Skill roll [0, off_skill_eff]. Higher = offense wins the play. Always present; 0 on punt/fg (no skill roll fired). On parent mismatch the roll is cosmetic — offense is auto-credited with the win. */

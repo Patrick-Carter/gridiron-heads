@@ -1,4 +1,14 @@
 import { useEffect, useRef } from 'react';
+import type { PlayResult } from '@gridiron/shared';
+import {
+  buildPlayPlan,
+  frameAt,
+  type OutcomeBanner,
+  type PlayFrame,
+  type PlayPlan,
+  type PlayerSprite,
+  type SpritePose,
+} from './playAnimation.js';
 
 // =============================================================================
 // BROWSER BOWL — Field renderer
@@ -31,10 +41,10 @@ const ENDZONE_W = 10 * YARD; // 48px
 const SCOREBOARD_H = 20;
 const CROWD_H = 8;
 const FIELD_TOP = SCOREBOARD_H + CROWD_H; // 28
-const FIELD_BOTTOM = FIELD_H - CROWD_H; // 262
-const PLAYABLE_H = FIELD_BOTTOM - FIELD_TOP; // 234
-const STATUS_BAR_Y = FIELD_BOTTOM + CROWD_H; // 270 - but we just paint into y=250-270
-const STATUS_BAR_H = FIELD_H - STATUS_BAR_Y; // 20
+const FIELD_BOTTOM = 242;
+const PLAYABLE_H = FIELD_BOTTOM - FIELD_TOP;
+const STATUS_BAR_Y = FIELD_BOTTOM + CROWD_H;
+const STATUS_BAR_H = FIELD_H - STATUS_BAR_Y;
 
 // =============== Palette ======================================================
 const COLORS = {
@@ -678,8 +688,8 @@ function drawFootball(
   ctx.translate(x, y);
   ctx.rotate(angle);
   ctx.scale(scale, scale);
-  const len = 8;
-  const wid = 4;
+  const len = 4;
+  const wid = 2;
   ctx.fillStyle = '#5b2a0a';
   for (let dx = -len; dx <= len; dx++) {
     const dy = Math.round(wid * Math.cos((dx / len) * Math.PI / 2));
@@ -690,14 +700,14 @@ function drawFootball(
   ctx.strokeRect(-len, -wid, len * 2 + 1, wid * 2 + 1);
   // Laces
   ctx.fillStyle = '#fff8dc';
-  ctx.fillRect(2, -1, 4, 1);
-  ctx.fillRect(2, 1, 4, 1);
-  for (let i = 0; i < 3; i++) {
-    ctx.fillRect(3 + i * 1.5, -0.5, 1, 2);
+  ctx.fillRect(0, -1, 3, 1);
+  ctx.fillRect(0, 1, 3, 1);
+  for (let i = 0; i < 2; i++) {
+    ctx.fillRect(1 + i * 2, -1, 1, 3);
   }
   // Highlight
   ctx.fillStyle = 'rgba(255, 248, 220, 0.2)';
-  ctx.fillRect(-len, -wid, len, 2);
+  ctx.fillRect(-len, -wid, len, 1);
   ctx.restore();
 }
 
@@ -805,9 +815,7 @@ function toCanvas(
 ): [number, number] {
   const losPx = (losYardline / 100) * FIELD_W;
   const x = Math.round(losPx + xOffsetYards * YARD * direction);
-  // y is normalized 0..1 across the full canvas height — keeps formations
-  // positioned consistently regardless of field decoration.
-  const y = Math.round(yNorm * FIELD_H);
+  const y = Math.round(FIELD_TOP + yNorm * PLAYABLE_H);
   return [x, y];
 }
 
@@ -1265,6 +1273,188 @@ function drawAnimFrame(
   ctx.globalAlpha = 1;
 }
 
+function spriteRole(role: PlayerSprite['role']): string {
+  switch (role) {
+    case 'QB': return 'Q';
+    case 'RB': return 'R';
+    case 'WR':
+    case 'TE': return 'W';
+    case 'OL': return 'O';
+    case 'CB': return 'C';
+    case 'K': return 'K';
+    case 'P': return 'P';
+    case 'H': return 'H';
+    case 'LS': return 'S';
+    case 'G': return 'G';
+    default: return 'D';
+  }
+}
+
+function drawPoseSprite(
+  ctx: CanvasRenderingContext2D,
+  player: PlayerSprite,
+  x: number,
+  y: number,
+  direction: 1 | -1,
+  tick: number,
+) {
+  const cfg = spriteConfigFor(spriteRole(player.role), player.team, player.slot);
+  const screenFacing = (player.facing === 'offense' ? direction : -direction);
+
+  if (player.pose === 'down' || player.pose === 'dive') {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(player.pose === 'down' ? Math.PI / 2 : screenFacing * Math.PI / 3);
+    drawSprite(ctx, -SPRITE_SIZE / 2, -SPRITE_SIZE / 2, cfg);
+    ctx.restore();
+    return;
+  }
+
+  drawSprite(ctx, Math.round(x - SPRITE_SIZE / 2), Math.round(y - SPRITE_SIZE / 2), cfg);
+  const step = player.pose === 'run1' ? -1 : player.pose === 'run2' ? 1 : 0;
+  const frontX = Math.round(x + screenFacing * 5);
+  const backX = Math.round(x - screenFacing * 5);
+  ctx.fillStyle = COLORS.outline;
+
+  if (player.pose === 'run1' || player.pose === 'run2') {
+    ctx.fillRect(frontX, Math.round(y - 2 + step), 2, 2);
+    ctx.fillRect(backX - 1, Math.round(y + 2 - step), 2, 2);
+    ctx.fillStyle = cfg.pants;
+    ctx.fillRect(Math.round(x - 2 * screenFacing), Math.round(y + 5 + step), 2, 1);
+    ctx.fillRect(Math.round(x + 2 * screenFacing), Math.round(y + 5 - step), 2, 1);
+  } else if (player.pose === 'block') {
+    ctx.fillStyle = cfg.shoulder;
+    ctx.fillRect(frontX - (screenFacing < 0 ? 2 : 0), Math.round(y - 3), 3, 2);
+    ctx.fillRect(frontX - (screenFacing < 0 ? 2 : 0), Math.round(y + 2), 3, 2);
+  } else if (player.pose === 'throw') {
+    ctx.fillStyle = cfg.shoulder;
+    ctx.fillRect(frontX - (screenFacing < 0 ? 3 : 0), Math.round(y - 4), 4, 2);
+  } else if (player.pose === 'catch') {
+    ctx.fillStyle = cfg.shoulder;
+    ctx.fillRect(frontX - (screenFacing < 0 ? 3 : 0), Math.round(y - 5), 4, 2);
+    ctx.fillRect(frontX - (screenFacing < 0 ? 3 : 0), Math.round(y + 4), 4, 2);
+  } else if (player.pose === 'kick') {
+    ctx.fillStyle = cfg.pants;
+    const kickReach = 5 + (tick % 2);
+    ctx.fillRect(Math.round(x + screenFacing * kickReach), Math.round(y + 3), 4, 2);
+  }
+}
+
+function planPoint(
+  xOffset: number,
+  yNorm: number,
+  losYardline: number,
+  direction: 1 | -1,
+): [number, number] {
+  return [
+    Math.round((losYardline / 100) * FIELD_W + xOffset * YARD * direction),
+    Math.round(FIELD_TOP + yNorm * PLAYABLE_H),
+  ];
+}
+
+function effectNoise(seed: number, tick: number, index: number): number {
+  let n = (seed ^ Math.imul(tick + 1, 0x45d9f3b) ^ Math.imul(index + 7, 0x27d4eb2d)) >>> 0;
+  n ^= n >>> 16;
+  n = Math.imul(n, 0x7feb352d);
+  n ^= n >>> 15;
+  return (n >>> 0) / 0xffffffff;
+}
+
+function drawPlanEffects(
+  ctx: CanvasRenderingContext2D,
+  plan: PlayPlan,
+  frame: PlayFrame,
+  losYardline: number,
+  direction: 1 | -1,
+) {
+  for (const effect of plan.effects) {
+    const age = frame.tick - effect.tick;
+    if (age < 0 || age > 8) continue;
+    const [x, y] = planPoint(effect.xOffset, effect.y, losYardline, direction);
+    const radius = 2 + age * effect.intensity;
+    const fade = 1 - age / 9;
+    ctx.save();
+    ctx.globalAlpha = fade;
+
+    if (effect.type === 'impact' || effect.type === 'block') {
+      ctx.strokeStyle = effect.type === 'impact' ? COLORS.yellow : COLORS.cream;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(Math.round(x - radius), Math.round(y - radius), Math.round(radius * 2), Math.round(radius * 2));
+      ctx.fillStyle = COLORS.cream;
+      ctx.fillRect(x - radius - 2, y, 3, 1);
+      ctx.fillRect(x + radius, y, 3, 1);
+      ctx.fillRect(x, y - radius - 2, 1, 3);
+      ctx.fillRect(x, y + radius, 1, 3);
+    } else if (effect.type === 'catch' || effect.type === 'handoff' || effect.type === 'throw') {
+      ctx.strokeStyle = effect.type === 'catch' ? COLORS.lime : COLORS.sky;
+      ctx.strokeRect(Math.round(x - radius), Math.round(y - radius), Math.round(radius * 2), Math.round(radius * 2));
+    } else if (effect.type === 'loose_ball' || effect.type === 'bounce') {
+      drawText(ctx, effect.type === 'loose_ball' ? '!' : '*', x + 5, y - 8 - age, COLORS.yellow, 2);
+    } else if (effect.type === 'dust' || effect.type === 'kick') {
+      ctx.fillStyle = COLORS.cream;
+      for (let i = 0; i < 8; i++) {
+        const nx = effectNoise(plan.seed, effect.tick, i) - 0.5;
+        const ny = effectNoise(plan.seed, effect.tick + 17, i) - 0.5;
+        ctx.fillRect(Math.round(x + nx * radius * 5), Math.round(y + ny * radius * 3), 1, 1);
+      }
+    }
+    ctx.restore();
+  }
+}
+
+function drawPlanBanner(
+  ctx: CanvasRenderingContext2D,
+  banner: OutcomeBanner | undefined,
+  tick: number,
+) {
+  if (!banner) return;
+  const age = tick - banner.fromTick;
+  if (age < 0) return;
+  const scale = banner.text.length > 17 ? 2 : 3;
+  const width = textWidth(banner.text, scale);
+  const x = Math.round((FIELD_W - width) / 2);
+  const y = Math.round(FIELD_TOP + PLAYABLE_H * 0.43);
+  const color = banner.tone === 'good' ? COLORS.lime : banner.tone === 'bad' ? COLORS.yellow : COLORS.cream;
+  const pulse = age < 5 && age % 2 === 0 ? 3 : 0;
+  ctx.fillStyle = banner.tone === 'bad' ? 'rgba(200,16,46,0.88)' : 'rgba(10,10,24,0.86)';
+  ctx.fillRect(x - 8 - pulse, y - 7 - pulse, width + 16 + pulse * 2, 5 * scale + 14 + pulse * 2);
+  ctx.fillStyle = COLORS.outline;
+  ctx.fillRect(x - 8 - pulse, y - 7 - pulse, width + 16 + pulse * 2, 2);
+  ctx.fillRect(x - 8 - pulse, y + 5 * scale + 5 + pulse, width + 16 + pulse * 2, 2);
+  drawText(ctx, banner.text, x, y, color, scale);
+}
+
+function drawPlayFrame(
+  ctx: CanvasRenderingContext2D,
+  plan: PlayPlan,
+  frame: PlayFrame,
+  losYardline: number,
+  direction: 1 | -1,
+) {
+  for (const player of frame.players) {
+    const [x, y] = planPoint(player.xOffset, player.y, losYardline, direction);
+    drawPoseSprite(ctx, player, x, y, direction, frame.tick);
+  }
+
+  if (frame.ball.visible) {
+    const [groundX, groundY] = planPoint(frame.ball.xOffset, frame.ball.y, losYardline, direction);
+    if (frame.ball.height > 0.03) {
+      ctx.fillStyle = `rgba(10,10,24,${0.35 - frame.ball.height * 0.18})`;
+      ctx.fillRect(groundX - 3, groundY + 2, 7, 2);
+    }
+    drawFootball(
+      ctx,
+      groundX,
+      groundY - Math.round(frame.ball.height * 18),
+      frame.ball.spin * Math.PI * 2,
+      0.55 + frame.ball.height * 0.25,
+    );
+  }
+
+  drawPlanEffects(ctx, plan, frame, losYardline, direction);
+  drawPlanBanner(ctx, frame.banner, frame.tick);
+}
+
 // =============== Static lineup (between plays) ===============================
 function drawStaticLineup(
   ctx: CanvasRenderingContext2D,
@@ -1304,11 +1494,15 @@ function drawStaticLineup(
 }
 
 // =============== Scoring flash effects =======================================
-function shouldShake(result: any): boolean {
+function shouldShake(result: PlayResult): boolean {
+  const scrimmagePlay = result.off_call.parent === 'run' || result.off_call.parent === 'pass';
   return result.scoring_event === 'td'
     || result.scoring_event === 'safety'
-    || Math.abs(result.yards ?? 0) >= 15
-    || (result.turnover && !result.scoring_event);
+    || (scrimmagePlay && Math.abs(result.yards ?? 0) >= 15)
+    || result.play_outcome === 'fumble'
+    || result.play_outcome === 'interception'
+    || result.play_outcome === 'punt_blocked'
+    || result.play_outcome === 'field_goal_blocked';
 }
 
 function getFlashMessage(result: any): { text: string; color: string } | null {
@@ -1351,7 +1545,7 @@ function drawFlashOverlay(
 
 // =============== Component ====================================================
 export interface FieldProps {
-  playResult: any | null;
+  playResult: PlayResult | null;
   ballYardline: number;
   offenseDirection: 1 | -1;
   possessionIdx: 0 | 1;
@@ -1418,8 +1612,10 @@ export default function Field({
     if (!ctx) return;
 
     const direction: 1 | -1 = playResult.offense_direction ?? offenseDirection;
+    const playPossessionIdx: 0 | 1 = direction === 1 ? 0 : 1;
+    const plan = buildPlayPlan(playResult, playPossessionIdx);
     const start = performance.now();
-    const duration = 2400;
+    const duration = plan.durationMs;
     const animLosYardline = playResult.yardline_before ?? ballYardline;
     const shake = shouldShake(playResult);
 
@@ -1429,29 +1625,28 @@ export default function Field({
       const elapsed = t - start;
       const progress = Math.min(1, elapsed / duration);
 
-      // Camera shake on big plays (Phase 3)
+      const frame = frameAt(plan, progress);
+
+      // Fixed-tick shake keeps seeded replays identical on every machine.
       ctx.save();
-      if (shake && progress > 0.45 && progress < 0.7) {
-        const intensity = (progress < 0.55 ? (progress - 0.45) / 0.1 : (0.7 - progress) / 0.15);
+      if (shake && frame.tick > 42 && frame.tick < 72) {
+        const intensity = frame.tick < 56 ? (frame.tick - 42) / 14 : (72 - frame.tick) / 16;
         const amp = Math.max(0, intensity) * 3;
+        const xNoise = effectNoise(plan.seed, frame.tick, 91) - 0.5;
+        const yNoise = effectNoise(plan.seed, frame.tick, 92) - 0.5;
         ctx.translate(
-          (Math.random() - 0.5) * amp,
-          (Math.random() - 0.5) * amp,
+          Math.round(xNoise * amp),
+          Math.round(yNoise * amp),
         );
       }
 
       drawScoreboard(ctx, homeName, awayName, homeScore, awayScore);
       drawCrowdBand(ctx, SCOREBOARD_H);
-      drawFieldBase(ctx, animLosYardline, direction, distance, homeName, awayName);
+      drawFieldBase(ctx, animLosYardline, direction, playResult.distance, homeName, awayName);
       drawCrowdBand(ctx, FIELD_BOTTOM);
-      drawStatusBar(ctx, down, distance, animLosYardline, direction);
+      drawStatusBar(ctx, playResult.down as 1 | 2 | 3 | 4, playResult.distance, animLosYardline, direction);
 
-      const playPossessionIdx: 0 | 1 = direction === 1 ? 0 : 1;
-      const frame = computeFrame(ctx, canvas, playResult, progress, direction, playPossessionIdx);
-      drawAnimFrame(ctx, canvas, frame);
-
-      // Scoring flash overlay on top of everything
-      drawFlashOverlay(ctx, canvas, playResult, progress);
+      drawPlayFrame(ctx, plan, frame, animLosYardline, direction);
 
       ctx.restore();
 

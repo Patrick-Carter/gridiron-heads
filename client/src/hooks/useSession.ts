@@ -5,6 +5,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { getSocket, EVENTS } from '../api/socket.js';
 import type { Socket } from 'socket.io-client';
+import type { PlayResult } from '@gridiron/shared';
 
 export interface SessionSnapshot {
   session_id: string;
@@ -17,7 +18,7 @@ export interface SessionSnapshot {
 }
 
 export interface PlayResultMsg {
-  result: any;
+  result: PlayResult;
 }
 
 export function useSession(
@@ -27,7 +28,7 @@ export function useSession(
   display_name: string = '',
 ) {
   const [state, setState] = useState<SessionSnapshot | null>(null);
-  const [lastPlayResult, setLastPlayResult] = useState<any | null>(null);
+  const [lastPlayResult, setLastPlayResult] = useState<PlayResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const sockRef = useRef<Socket | null>(null);

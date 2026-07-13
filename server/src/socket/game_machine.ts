@@ -344,6 +344,14 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       scoring_event: made ? 'fg' : null,
       seed,
       offense_direction,
+      effective_off_call: off_play,
+      effective_def_call: def_play,
+      play_outcome: blocked
+        ? 'field_goal_blocked'
+        : made
+          ? 'field_goal_good'
+          : 'field_goal_missed',
+      turnover_on_downs: false,
       text_recap: blocked
         ? 'FIELD GOAL BLOCKED! Defense takes over.'
         : made
@@ -428,6 +436,10 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       scoring_event: null,
       seed,
       offense_direction: off_dir,
+      effective_off_call: off_play,
+      effective_def_call: def_play,
+      play_outcome: blocked ? 'punt_blocked' : 'punt',
+      turnover_on_downs: false,
       text_recap: blocked
         ? `PUNT BLOCKED! Defense takes over.`
         : `Punt of ${net_punt_yards} yards.`,
@@ -576,6 +588,18 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     scoring_event,
     seed,
     offense_direction,
+    effective_off_call: resolve.effective_off_play,
+    effective_def_call: resolve.effective_def_play,
+    play_outcome: resolve.turnover
+      ? resolve.effective_off_play.parent === 'pass' ? 'interception' : 'fumble'
+      : resolve.effective_off_play.parent === 'pass'
+        ? resolve.yards < 0
+          ? 'pass_sack'
+          : resolve.yards === 0
+            ? 'pass_incomplete'
+            : 'pass_complete'
+        : 'run',
+    turnover_on_downs,
     text_recap: turnover_on_downs
       ? `TURNOVER ON DOWNS! ${resolve.yards > 0 ? `Gain of ${resolve.yards}.` : resolve.yards < 0 ? `Loss of ${Math.abs(resolve.yards)}.` : 'No gain.'}`
       : recapText(resolve, scoring_event),
