@@ -145,7 +145,7 @@ export interface PlayResult {
   fg_total?: number;
   /** FG: effective kicker power after QB modifiers (the bound for power_roll). */
   fg_power_eff?: number;
-  /** Punt: net forward yardage rolled (30..50). Used by the recap/HUD. */
+  /** Punt: net forward yardage after block/landing-spot caps. Used by the recap/HUD. */
   punt_roll?: number;
 }
 

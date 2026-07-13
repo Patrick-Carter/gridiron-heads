@@ -12,6 +12,8 @@ import {
   isValidAudibleSub,
   snapshot,
   emptyTeam,
+  isValidPlay,
+  audibleLimit,
 } from '../src/socket/game_machine.js';
 import type { RoomState } from '../src/socket/game_machine.js';
 import { kickoffYardline, offenseDirection } from '@gridiron/shared';
@@ -145,6 +147,30 @@ describe('isValidAudibleSub', () => {
   });
   it('rejects invalid flips', () => {
     expect(isValidAudibleSub({ parent: 'pass', sub: 'deep' }, 'inside')).toBe(false);
+  });
+});
+
+describe('socket play validation and QB quotas', () => {
+  it('accepts legal calls and rejects invalid parent/sub combinations', () => {
+    expect(isValidPlay({ parent: 'run', sub: 'inside' })).toBe(true);
+    expect(isValidPlay({ parent: 'pass', sub: 'deep' })).toBe(true);
+    expect(isValidPlay({ parent: 'punt', sub: 'inside' })).toBe(true);
+    expect(isValidPlay({ parent: 'run', sub: 'deep' })).toBe(false);
+    expect(isValidPlay({ parent: 'banana', sub: 'inside' })).toBe(false);
+    expect(isValidPlay(null)).toBe(false);
+  });
+
+  it('applies drafted real/fake audible refresh modifiers', () => {
+    const team = emptyTeam();
+    expect(audibleLimit(team, 'real')).toBe(1);
+    team.qb = {
+      id: 'QB_Pivot',
+      group: 'QB',
+      name: 'Pivot',
+      modifier: { stat: 'real_audible_refresh', value: 1, scope: 'all_plays' },
+    };
+    expect(audibleLimit(team, 'real')).toBe(2);
+    expect(audibleLimit(team, 'fake')).toBe(1);
   });
 });
 
@@ -372,9 +398,8 @@ describe('Play resolution', () => {
   });
 
   it('turnover on downs: 4th down with insufficient yards flips possession', () => {
-    // Force 4th down with insufficient yards by overriding game state directly
-    let succeeded = false;
-    for (let s = 1; s < 200 && !succeeded; s++) {
+    let resultFound = false;
+    for (let s = 1; s < 200 && !resultFound; s++) {
       const r = setupReadyToSnapRoom();
       r.game!.down = 4;
       r.game!.distance = 99; // very hard to convert
@@ -383,12 +408,30 @@ describe('Play resolution', () => {
       r.pending_schemes[r.players[1].id] = { parent: 'pass', sub: 'deep' };
       const beforeOff = r.game!.possession_idx;
       const { result } = resolveCurrentPlay(r, s);
-      if (!result.turnover && Math.abs(result.yards) < 99 && r.game!.possession_idx !== beforeOff) {
-        succeeded = true;
+      if (Math.abs(result.yards) < 99 && r.game!.possession_idx !== beforeOff) {
+        expect(result.down).toBe(4);
+        expect(result.distance).toBe(99);
+        expect(result.turnover).toBe(true);
+        expect(result.text_recap).toContain('TURNOVER ON DOWNS');
+        expect(r.game!.down).toBe(1);
+        expect(r.game!.distance).toBe(10);
+        resultFound = true;
       }
     }
-    // Even if we didn't find a strict-match seed, verify the function accepts the inputs
-    expect(true).toBe(true);
+    expect(resultFound).toBe(true);
+  });
+
+  it('records pre-snap down and distance on normal run/pass results', () => {
+    const r = setupReadyToSnapRoom();
+    r.game!.down = 2;
+    r.game!.distance = 7;
+    const offIdx = r.game!.possession_idx;
+    const defIdx = offIdx === 0 ? 1 : 0;
+    r.pending_schemes[r.players[offIdx].id] = { parent: 'run', sub: 'inside' };
+    r.pending_schemes[r.players[defIdx].id] = { parent: 'pass', sub: 'deep' };
+    const { result } = resolveCurrentPlay(r, 1);
+    expect(result.down).toBe(2);
+    expect(result.distance).toBe(7);
   });
 
   it('run play with same parent+sub has 25% turnover rate', () => {
@@ -432,6 +475,81 @@ describe('Play resolution', () => {
       }
     }
     expect(succeeded).toBe(true);
+  });
+
+  it('a seeded FG block overrides a make and awards no points', () => {
+    let found = false;
+    for (let seed = 1; seed < 500 && !found; seed++) {
+      const r = setupReadyToSnapRoom();
+      r.game!.possession_idx = 0;
+      r.game!.ball_yardline = 99;
+      r.game!.teams[0].kicker = { id: 'K', group: 'KICKER', skill: 100, name: 'K' };
+      r.pending_schemes[r.players[0].id] = { parent: 'fg', sub: 'inside' };
+      r.pending_schemes[r.players[1].id] = { parent: 'fg', sub: 'deep' };
+      const { result, scoring_event } = resolveCurrentPlay(r, seed);
+      if (result.text_recap.includes('BLOCKED') && (result.fg_total ?? 0) > 1) {
+        expect(scoring_event).toBeNull();
+        expect(result.scoring_event).toBeNull();
+        expect(r.game!.scores[0]).toBe(0);
+        expect(result.turnover).toBe(true);
+        found = true;
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it.each([
+    { possession: 0 as const, start: 90, receivingFive: 95 },
+    { possession: 1 as const, start: 10, receivingFive: 5 },
+  ])('caps punts at the receiving five in direction $possession', ({ possession, start, receivingFive }) => {
+    let found = false;
+    for (let seed = 1; seed < 200 && !found; seed++) {
+      const r = setupReadyToSnapRoom();
+      r.game!.possession_idx = possession;
+      r.game!.ball_yardline = start;
+      const defIdx = possession === 0 ? 1 : 0;
+      r.pending_schemes[r.players[possession].id] = { parent: 'punt', sub: 'inside' };
+      r.pending_schemes[r.players[defIdx].id] = { parent: 'run', sub: 'inside' };
+      const { result } = resolveCurrentPlay(r, seed);
+      if (!result.text_recap.includes('BLOCKED')) {
+        expect(result.yardline_after).toBe(receivingFive);
+        expect(result.yards).toBe(5);
+        expect(result.turnover).toBe(true);
+        found = true;
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it('special-team resolution is deterministic for the same seed', () => {
+    const resolvePunt = () => {
+      const r = setupReadyToSnapRoom();
+      r.game!.possession_idx = 0;
+      r.game!.ball_yardline = 25;
+      r.pending_schemes[r.players[0].id] = { parent: 'punt', sub: 'inside' };
+      r.pending_schemes[r.players[1].id] = { parent: 'punt', sub: 'short' };
+      return resolveCurrentPlay(r, 42).result;
+    };
+    expect(resolvePunt()).toEqual(resolvePunt());
+  });
+
+  it('spots a blocked punt at the LOS even inside the receiving five', () => {
+    let found = false;
+    for (let seed = 1; seed < 200 && !found; seed++) {
+      const r = setupReadyToSnapRoom();
+      r.game!.possession_idx = 0;
+      r.game!.ball_yardline = 98;
+      r.pending_schemes[r.players[0].id] = { parent: 'punt', sub: 'inside' };
+      r.pending_schemes[r.players[1].id] = { parent: 'punt', sub: 'short' };
+      const { result } = resolveCurrentPlay(r, seed);
+      if (result.text_recap.includes('BLOCKED')) {
+        expect(result.yardline_after).toBe(98);
+        expect(result.yards).toBe(0);
+        expect(result.punt_roll).toBe(0);
+        found = true;
+      }
+    }
+    expect(found).toBe(true);
   });
 
   it('TD scores 1 point + possession change', () => {
@@ -533,5 +651,27 @@ describe('Snapshot', () => {
     expect(snap.players).toHaveLength(2);
     expect(snap.draft).toBeTruthy();
     expect(snap.game).toBeNull();
+  });
+
+  it('redacts a pending call until both players commit', () => {
+    const room = setupReadyToSnapRoom();
+    room.game!.phase = 'awaiting_schemes';
+    room.pending_schemes = { [room.players[0].id]: { parent: 'run', sub: 'inside' } };
+    expect(snapshot(room).pending_schemes).toEqual({ [room.players[0].id]: null });
+
+    room.pending_schemes[room.players[1].id] = { parent: 'pass', sub: 'deep' };
+    expect(snapshot(room).pending_schemes[room.players[0].id]).toEqual({ parent: 'run', sub: 'inside' });
+  });
+
+  it('never serializes pending real/fake audible internals', () => {
+    const room = setupReadyToSnapRoom();
+    (room.game as any)._pending_off_audible = { parent: 'run', sub: 'outside' };
+    (room.game as any)._pending_def_audible = { parent: 'pass', sub: 'short' };
+    (room.game as any)._pending_off_fake = true;
+
+    const game = snapshot(room).game;
+    expect(game).not.toHaveProperty('_pending_off_audible');
+    expect(game).not.toHaveProperty('_pending_def_audible');
+    expect(game).not.toHaveProperty('_pending_off_fake');
   });
 });

@@ -8,11 +8,13 @@ import {
   cpuMaybeAudible,
   cpuRespondAudible,
   CPU_PLAYER_ID,
+  tickCpu,
 } from '../src/socket/cpu.js';
 import {
   newRoom,
   flipCoin,
   startDraft,
+  draftPick,
 } from '../src/socket/game_machine.js';
 import type { RoomState } from '../src/socket/game_machine.js';
 import { mulberry32 } from '@gridiron/shared';
@@ -94,12 +96,11 @@ function makeCpuGameRoom(draft_seed = 1, down: 1 | 2 | 3 | 4 = 1, yardline = 25)
 // Draft picks
 // ---------------------------------------------------------------------------
 describe('cpuDraftPick', () => {
-  it('picks from the priority group when it is CPU turn', () => {
+  it('picks a QB first when it is CPU turn', () => {
     const room = makeCpuRoomWithDraft();
     const beforeTurn = room.draft!.current_turn;
     cpuDraftPick(room);
     expect(room.draft!.current_turn).toBe(beforeTurn + 1);
-    // CPU should have a QB now (first group in PICK_ORDER is QB).
     expect(room.draft!.picks[CPU_PLAYER_ID].qb).toBeTruthy();
   });
 
@@ -115,25 +116,57 @@ describe('cpuDraftPick', () => {
     expect(room.draft!.current_turn).toBe(beforeTurn); // no change
   });
 
-  it('picks the highest-skill option from a skill group', () => {
+  it('picks the highest-skill available player after QB', () => {
     const room = makeCpuRoomWithDraft();
-    // Force the pool for D_LINE so the test is deterministic.
-    room.draft!.pool.D_LINE = [
-      { id: 'lo', group: 'D_LINE', skill: 60, name: 'Lo' } as any,
-      { id: 'hi', group: 'D_LINE', skill: 95, name: 'Hi' } as any,
-    ];
-    // Pre-fill QB + O_LINE so the next CPU pick is D_LINE (3rd group).
     room.draft!.picks[CPU_PLAYER_ID].qb = { id: 'pre_qb', group: 'QB', name: 'Pre', modifier: { stat: 'off_skill_pct', value: 10, scope: 'all_plays' } } as any;
-    room.draft!.picks[CPU_PLAYER_ID].o_line = { id: 'pre_ol', group: 'O_LINE', skill: 80, name: 'PreO' } as any;
-    // Pick_order: CPU at index 3 (the 3rd CPU pick = D_LINE since QB and
-    // O_LINE are pre-filled but D_LINE is not). With CPU as first_possession,
-    // pick_order = [CPU, HOST, CPU, HOST, CPU, HOST, ...]. Turn 3 is HOST.
-    // Force CPU at turn 3 instead.
-    room.draft!.pick_order[3] = CPU_PLAYER_ID;
-    room.draft!.current_turn = 3;
+    room.draft!.pool.D_LINE = [
+      { id: 'd-line-best', group: 'D_LINE', skill: 95, name: 'D-Line Best' } as any,
+    ];
+    room.draft!.pool.O_LINE = [
+      { id: 'o-line-best', group: 'O_LINE', skill: 99, name: 'O-Line Best' } as any,
+    ];
+    room.draft!.pool.OFF_SKILL = [
+      { id: 'off-skill-best', group: 'OFF_SKILL', skill: 97, name: 'Off Skill Best' } as any,
+    ];
+    room.draft!.pool.DEF_SKILL = [
+      { id: 'def-skill-best', group: 'DEF_SKILL', skill: 96, name: 'Def Skill Best' } as any,
+    ];
+    room.draft!.pool.KICKER = [
+      { id: 'kicker-best', group: 'KICKER', skill: 98, name: 'Kicker Best' } as any,
+    ];
+    room.draft!.current_turn = 2;
+
     cpuDraftPick(room);
-    expect(room.draft!.picks[CPU_PLAYER_ID].d_line).toBeTruthy();
-    expect(room.draft!.picks[CPU_PLAYER_ID].d_line!.id).toBe('hi');
+
+    expect(room.draft!.picks[CPU_PLAYER_ID].o_line?.id).toBe('o-line-best');
+    expect(room.draft!.picks[CPU_PLAYER_ID].d_line).toBeNull();
+  });
+
+  it('starts the game when the CPU owns the final draft pick', () => {
+    const room = makeCpuRoomWithDraft();
+    room.first_possession_id = 'host-id';
+    room.draft!.pick_order = room.draft!.pick_order.map((_, i) =>
+      i % 2 === 0 ? 'host-id' : CPU_PLAYER_ID,
+    );
+    const groups = ['QB', 'D_LINE', 'O_LINE', 'OFF_SKILL', 'DEF_SKILL', 'KICKER'] as const;
+    for (let turn = 0; turn < 11; turn++) {
+      const picker = room.draft!.pick_order[turn];
+      if (picker === CPU_PLAYER_ID) {
+        cpuDraftPick(room);
+      } else {
+        const team = room.draft!.picks[picker];
+        const group = groups.find((candidate) => !(team as any)[candidate.toLowerCase()])!;
+        draftPick(room, picker, group, room.draft!.pool[group][0].id);
+      }
+    }
+    expect(room.draft!.pick_order[11]).toBe(CPU_PLAYER_ID);
+
+    const io = { to: () => ({ emit: () => undefined }) } as any;
+    tickCpu(io, room);
+
+    expect(room.draft!.current_turn).toBe(12);
+    expect(room.game).not.toBeNull();
+    expect(room.game!.phase).toBe('awaiting_schemes');
   });
 });
 

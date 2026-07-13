@@ -1,11 +1,11 @@
 import VolumePanel from './VolumePanel.js';
-import { ballSpot } from '@gridiron/shared';
+import { ballSpotAt } from '@gridiron/shared';
 
 function downLabel(d: number): string {
   return d === 1 ? '1st' : d === 2 ? '2nd' : d === 3 ? '3rd' : '4th';
 }
 
-function spotText(spot: ReturnType<typeof ballSpot>): string {
+function spotText(spot: ReturnType<typeof ballSpotAt>): string {
   if (spot.label === null) return 'at midfield';
   return `at ${spot.label.toLowerCase()} ${spot.yards}`;
 }
@@ -43,7 +43,7 @@ export default function ScorePanel({
   offenseDirection: 1 | -1;
   onOpenRoster: (idx: 0 | 1) => void;
 }) {
-  const spot = ballSpot({ ball_yardline: ballYardline } as any);
+  const spot = ballSpotAt(ballYardline, offenseDirection);
   return (
     <div
       className="panel-flash !py-1.5 !px-2"

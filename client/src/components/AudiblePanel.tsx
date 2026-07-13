@@ -8,6 +8,8 @@ export default function AudiblePanel({
   currentPlay,
   audiblesUsed,
   fakeAudiblesUsed,
+  realAudibleLimit = 1,
+  fakeAudibleLimit = 1,
   onAudible,
   onFakeAudible,
   onDefAudible,
@@ -18,6 +20,8 @@ export default function AudiblePanel({
   currentPlay?: Play;
   audiblesUsed?: number;
   fakeAudiblesUsed?: number;
+  realAudibleLimit?: number;
+  fakeAudibleLimit?: number;
   onAudible?: (sub: PlaySub) => void;
   onFakeAudible?: () => void;
   onDefAudible?: (sub: PlaySub) => void;
@@ -27,8 +31,9 @@ export default function AudiblePanel({
   const [showPicker, setShowPicker] = useState(false);
 
   if (role === 'offense' && phase === 'ready_to_snap') {
-    const realLeft = (audiblesUsed ?? 0) === 0;
-    const fakeLeft = (fakeAudiblesUsed ?? 0) === 0;
+    if (currentPlay?.parent === 'punt' || currentPlay?.parent === 'fg') return null;
+    const realLeft = (audiblesUsed ?? 0) < realAudibleLimit;
+    const fakeLeft = (fakeAudiblesUsed ?? 0) < fakeAudibleLimit;
     return (
       <div className="panel-flash space-y-2">
         <div className="panel-titlebar !mt-0">

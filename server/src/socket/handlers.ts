@@ -14,6 +14,9 @@ import {
   snapshot,
   clearSchemes,
   isValidAudibleSub,
+  isValidPlay,
+  audibleLimit,
+  readyToSnap,
 } from './game_machine.js';
 import { tickCpu, CPU_PLAYER_ID } from './cpu.js';
 import { TOTAL_PICKS } from '@gridiron/shared';
@@ -168,10 +171,24 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       if (!room) return;
       const player = room.players.find((p) => p.id === sdata.player_id);
       if (!player || player.is_cpu) return;
+      if (room.game && room.game.phase !== 'ended') {
+        socket.emit('session:error', { error: 'game_in_progress' });
+        return;
+      }
+      if (room.draft && !room.game) {
+        socket.emit('session:error', { error: 'draft_in_progress' });
+        return;
+      }
       setReady(room, sdata.player_id);
       touchRoom(room);
       io.to(`session:${sdata.session_id}`).emit('session:state', snapshot(room));
       if (allReady(room)) {
+        if (room.game?.phase === 'ended') {
+          room.draft_seed = Math.floor(Math.random() * 2 ** 32);
+        }
+        room.game = null;
+        room.draft = null;
+        clearSchemes(room);
         flipCoin(room);
         startDraft(room);
         touchRoom(room);
@@ -179,12 +196,22 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       }
     });
 
-    socket.on('draft:pick', ({ group, option_id }: { group: string; option_id: string }) => {
+    socket.on('draft:pick', (raw: unknown) => {
       if (!sdata.session_id || !sdata.player_id) return;
       const room = getRoom(sdata.session_id);
       if (!room || !room.draft) return;
       if (sdata.player_id === CPU_PLAYER_ID) {
         socket.emit('session:error', { error: 'cpu_id_reserved' });
+        return;
+      }
+      if (!raw || typeof raw !== 'object') {
+        socket.emit('session:error', { error: 'invalid_draft_pick' });
+        return;
+      }
+      const { group, option_id } = raw as { group?: unknown; option_id?: unknown };
+      if (!['QB', 'D_LINE', 'O_LINE', 'OFF_SKILL', 'DEF_SKILL', 'KICKER'].includes(group as string)
+        || typeof option_id !== 'string') {
+        socket.emit('session:error', { error: 'invalid_draft_pick' });
         return;
       }
       const r = draftPick(room, sdata.player_id, group as any, option_id);
@@ -194,7 +221,7 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       }
       touchRoom(room);
       broadcast(io, sdata.session_id, room);
-      if (room.draft.current_turn >= TOTAL_PICKS) {
+      if (room.draft.current_turn >= TOTAL_PICKS && !room.game) {
         const game = startGame(room);
         game.phase = 'awaiting_schemes';
         touchRoom(room);
@@ -202,7 +229,7 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       }
     });
 
-    socket.on('game:scheme_pick', ({ parent, sub }: { parent: Play['parent']; sub: Play['sub'] }) => {
+    socket.on('game:scheme_pick', (raw: unknown) => {
       if (!sdata.session_id || !sdata.player_id) return;
       const room = getRoom(sdata.session_id);
       if (!room || !room.game) return;
@@ -215,6 +242,15 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
         socket.emit('session:error', { error: 'not_awaiting_schemes' });
         return;
       }
+      if (!isValidPlay(raw)) {
+        socket.emit('session:error', { error: 'invalid_scheme' });
+        return;
+      }
+      if (room.pending_schemes[sdata.player_id]) {
+        socket.emit('session:error', { error: 'scheme_already_picked' });
+        return;
+      }
+      const { parent, sub } = raw;
       room.pending_schemes[sdata.player_id] = { parent, sub };
       if (Object.keys(room.pending_schemes).length === 2) {
         game.phase = 'ready_to_snap';
@@ -223,7 +259,7 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       broadcast(io, sdata.session_id, room);
     });
 
-    socket.on('game:audible', ({ target_sub }: { target_sub: PlaySub }) => {
+    socket.on('game:audible', (raw: unknown) => {
       if (!sdata.session_id || !sdata.player_id) return;
       const room = getRoom(sdata.session_id);
       if (!room || !room.game) return;
@@ -232,6 +268,20 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
         return;
       }
       const game = room.game;
+      if (!raw || typeof raw !== 'object') {
+        socket.emit('session:error', { error: 'invalid_audible_sub' });
+        return;
+      }
+      const { target_sub } = raw as { target_sub?: PlaySub };
+      if (target_sub !== 'inside' && target_sub !== 'outside'
+        && target_sub !== 'deep' && target_sub !== 'short') {
+        socket.emit('session:error', { error: 'invalid_audible_sub' });
+        return;
+      }
+      if (game.phase !== 'ready_to_snap') {
+        socket.emit('session:error', { error: 'not_ready_to_snap' });
+        return;
+      }
       const player_idx = room.players.findIndex((p) => p.id === sdata.player_id);
       if (player_idx === -1) return;
       if (player_idx !== game.possession_idx) {
@@ -251,7 +301,7 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
         socket.emit('session:error', { error: 'invalid_audible_sub' });
         return;
       }
-      if (game.audibles_used[player_idx] > 0) {
+      if (game.audibles_used[player_idx] >= audibleLimit(game.teams[player_idx], 'real')) {
         socket.emit('session:error', { error: 'audible_used' });
         return;
       }
@@ -271,6 +321,10 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
         return;
       }
       const game = room.game;
+      if (game.phase !== 'ready_to_snap') {
+        socket.emit('session:error', { error: 'not_ready_to_snap' });
+        return;
+      }
       const player_idx = room.players.findIndex((p) => p.id === sdata.player_id);
       if (player_idx === -1) return;
       if (player_idx !== game.possession_idx) {
@@ -278,11 +332,15 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
         return;
       }
       const currentPlay: Play | undefined = room.pending_schemes[sdata.player_id];
-      if (currentPlay && (currentPlay.parent === 'punt' || currentPlay.parent === 'fg')) {
+      if (!currentPlay) {
+        socket.emit('session:error', { error: 'no_current_play' });
+        return;
+      }
+      if (currentPlay.parent === 'punt' || currentPlay.parent === 'fg') {
         socket.emit('session:error', { error: 'no_audible_on_special' });
         return;
       }
-      if (game.fake_audibles_used[player_idx] > 0) {
+      if (game.fake_audibles_used[player_idx] >= audibleLimit(game.teams[player_idx], 'fake')) {
         socket.emit('session:error', { error: 'fake_audible_used' });
         return;
       }
@@ -293,7 +351,7 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       broadcast(io, sdata.session_id, room);
     });
 
-    socket.on('game:def_audible', ({ target_sub }: { target_sub: PlaySub }) => {
+    socket.on('game:def_audible', (raw: unknown) => {
       if (!sdata.session_id || !sdata.player_id) return;
       const room = getRoom(sdata.session_id);
       if (!room || !room.game) return;
@@ -302,6 +360,16 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
         return;
       }
       const game = room.game;
+      if (!raw || typeof raw !== 'object') {
+        socket.emit('session:error', { error: 'invalid_audible_sub' });
+        return;
+      }
+      const { target_sub } = raw as { target_sub?: PlaySub };
+      if (target_sub !== 'inside' && target_sub !== 'outside'
+        && target_sub !== 'deep' && target_sub !== 'short') {
+        socket.emit('session:error', { error: 'invalid_audible_sub' });
+        return;
+      }
       const player_idx = room.players.findIndex((p) => p.id === sdata.player_id);
       if (player_idx === -1) return;
       const defIdx = game.possession_idx === 0 ? 1 : 0;
@@ -345,6 +413,7 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       const defIdx = game.possession_idx === 0 ? 1 : 0;
       if (player_idx !== defIdx) return;
       if (game.phase !== 'awaiting_def_response') return;
+      if (!readyToSnap(room)) return;
       (game as any)._pending_def_audible = null;
       game.phase = 'ready_to_snap';
       touchRoom(room);
@@ -361,7 +430,18 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       }
       const game = room.game;
       if (game.phase !== 'ready_to_snap') return;
+      if (!sdata.player_id) return;
+      const player_idx = room.players.findIndex((player) => player.id === sdata.player_id);
+      if (player_idx !== game.possession_idx) {
+        socket.emit('session:error', { error: 'not_offense' });
+        return;
+      }
+      if (!readyToSnap(room)) {
+        socket.emit('session:error', { error: 'missing_scheme' });
+        return;
+      }
       const seed = Math.floor(Math.random() * 2 ** 32);
+      const generation = ++room.play_generation;
       const { result } = resolveCurrentPlay(room, seed);
       const gameEnded = (game.phase as string) === 'ended';
       if (!gameEnded) game.phase = 'play_anim';
@@ -372,7 +452,7 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       const sid = sdata.session_id;
       setTimeout(() => {
         const r = getRoom(sid);
-        if (r?.game?.phase === 'play_anim') {
+        if (r?.play_generation === generation && r.game?.phase === 'play_anim') {
           r.game.phase = 'between_plays';
           touchRoom(r);
           broadcast(io, sid, r);
@@ -380,7 +460,7 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       }, 2000);
       setTimeout(() => {
         const r = getRoom(sid);
-        if (r?.game?.phase === 'between_plays') {
+        if (r?.play_generation === generation && r.game?.phase === 'between_plays') {
           r.game.phase = 'awaiting_schemes';
           clearSchemes(r);
           touchRoom(r);
@@ -400,6 +480,7 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       const game = room.game;
       if (game.phase === 'ended') return;
       if (game.phase !== 'between_plays' && game.phase !== 'play_anim') return;
+      room.play_generation++;
       game.phase = 'awaiting_schemes';
       clearSchemes(room);
       touchRoom(room);

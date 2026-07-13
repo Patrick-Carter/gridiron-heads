@@ -30,6 +30,8 @@ import {
   clearAudibles,
   resolveCurrentPlay,
   snapshot,
+  startGame,
+  audibleLimit,
 } from './game_machine.js';
 import { touchRoom } from '../rooms.js';
 // Note: cpu.ts is a leaf — only handlers.ts imports it. No circular deps.
@@ -64,9 +66,8 @@ export interface CpuPlayer {
 export const CPU_PLAYER_ID = 'cpu';
 
 // ---------------------------------------------------------------------------
-// Draft — pick the highest-skill remaining option from the highest-priority
-// unpicked group. Priority = PICK_ORDER (QB > KICKER > OFF_SKILL > DEF_SKILL
-// > O_LINE > D_LINE). For QB picks, prefer the highest-value modifier since
+// Draft — take a QB first, then pick the highest-skill player available across
+// every unfilled group. For QB picks, prefer the highest-value modifier since
 // QBs only contribute via their single buff.
 // ---------------------------------------------------------------------------
 export function cpuDraftPick(room: RoomState): void {
@@ -77,27 +78,31 @@ export function cpuDraftPick(room: RoomState): void {
   const team = room.draft.picks[CPU_PLAYER_ID];
   if (!team) return;
 
-  // First unpicked group in priority order
-  const group = PICK_ORDER.find((g) => !groupPicked(team, g));
-  if (!group) return;
-  const pool = room.draft.pool[group];
-  if (!pool || pool.length === 0) return;
-
-  // Pick the strongest remaining option
-  let best: PositionOption | QBOption | null = null;
-  if (group === 'QB') {
-    // QB modifier.value drives CPU value
-    best = pool.reduce((acc, o) =>
-      (o as QBOption).modifier.value >= (acc as QBOption).modifier.value ? o : acc,
-      pool[0] as QBOption);
-  } else {
-    // Skill groups: highest skill wins
-    best = pool.reduce((acc, o) =>
-      (o as PositionOption).skill >= (acc as PositionOption).skill ? o : acc,
-      pool[0] as PositionOption);
+  if (!team.qb) {
+    const pool = room.draft.pool.QB as QBOption[];
+    if (pool.length === 0) return;
+    const best = pool.reduce((acc, option) =>
+      option.modifier.value > acc.modifier.value ? option : acc,
+    );
+    draftPick(room, CPU_PLAYER_ID, 'QB', best.id);
+    return;
   }
 
-  draftPick(room, CPU_PLAYER_ID, group, best.id);
+  let bestGroup: PositionGroup | null = null;
+  let bestPlayer: PositionOption | null = null;
+  for (const group of PICK_ORDER) {
+    if (group === 'QB' || groupPicked(team, group)) continue;
+    for (const option of room.draft.pool[group] as PositionOption[]) {
+      if (!bestPlayer || option.skill > bestPlayer.skill) {
+        bestGroup = group;
+        bestPlayer = option;
+      }
+    }
+  }
+
+  if (bestGroup && bestPlayer) {
+    draftPick(room, CPU_PLAYER_ID, bestGroup, bestPlayer.id);
+  }
 }
 
 function groupPicked(team: TeamState, group: PositionGroup): boolean {
@@ -172,8 +177,9 @@ export function cpuMaybeAudible(room: RoomState, playerIdx: 0 | 1): 'audible' | 
   // Server rule: no audibles on punt/FG.
   if (currentPlay.parent === 'punt' || currentPlay.parent === 'fg') return null;
 
-  const realLeft = game.audibles_used[playerIdx] === 0;
-  const fakeLeft = game.fake_audibles_used[playerIdx] === 0;
+  const team = game.teams[playerIdx];
+  const realLeft = game.audibles_used[playerIdx] < audibleLimit(team, 'real');
+  const fakeLeft = game.fake_audibles_used[playerIdx] < audibleLimit(team, 'fake');
 
   // Fake takes priority over real audible so we use the consumable.
   // 25% fake (only if both available and the dice hit)
@@ -251,6 +257,7 @@ export function cpuSnap(io: IOServer, room: RoomState): void {
 
   const sid = room.session_id;
   const seed = Math.floor(Math.random() * 2 ** 32);
+  const generation = ++room.play_generation;
   const { result } = resolveCurrentPlay(room, seed);
 
   // D024 guard: don't overwrite 'ended' phase.
@@ -263,13 +270,13 @@ export function cpuSnap(io: IOServer, room: RoomState): void {
   if (gameEnded) return; // no auto-advance
 
   setTimeout(() => {
-    if (room.game?.phase === 'play_anim') {
+    if (room.play_generation === generation && room.game?.phase === 'play_anim') {
       room.game.phase = 'between_plays';
       io.to(`session:${sid}`).emit('session:state', snapshot(room));
     }
   }, 2000);
   setTimeout(() => {
-    if (room.game?.phase === 'between_plays') {
+    if (room.play_generation === generation && room.game?.phase === 'between_plays') {
       room.game.phase = 'awaiting_schemes';
       clearSchemes(room);
       io.to(`session:${sid}`).emit('session:state', snapshot(room));
@@ -300,7 +307,11 @@ export function tickCpu(io: IOServer, room: RoomState, depth = 0): void {
     const pickerId = room.draft.pick_order[room.draft.current_turn];
     if (pickerId === room.cpu_player_id) {
       cpuDraftPick(room);
-      // After draft pick, game may have just started (final pick → startGame).
+      if (room.draft.current_turn >= TOTAL_PICKS && !room.game) {
+        const game = startGame(room);
+        game.phase = 'awaiting_schemes';
+      }
+      // After the final pick, continue into the first scheme selection.
       // Recurse: CPU may now be offense in awaiting_schemes.
       broadcast();
       tickCpu(io, room, depth + 1);

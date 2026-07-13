@@ -105,7 +105,7 @@ export function advanceAfterPlay(state: GameState, yards: number): AdvanceResult
 
   if (yards >= state.distance) {
     next.down = 1;
-    next.distance = 10;
+    next.distance = Math.min(10, Math.max(0, yardsToEndzone(next)));
   } else {
     next.down = Math.min(4, state.down + 1) as 1 | 2 | 3 | 4;
     // Positive yards reduce distance; negative yards increase it

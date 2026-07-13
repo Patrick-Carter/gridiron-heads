@@ -6,7 +6,17 @@
 
 import { describe, it, expect } from 'vitest';
 import { __test } from '../src/components/Field.jsx';
-const { FONT_3x5, spriteConfigFor, jerseyNumFor, FIELD_W, FIELD_H, YARD, SPRITE_SIZE } = __test;
+const {
+  FONT_3x5,
+  spriteConfigFor,
+  jerseyNumFor,
+  teamsForPossession,
+  computeFrame,
+  FIELD_W,
+  FIELD_H,
+  YARD,
+  SPRITE_SIZE,
+} = __test;
 
 describe('Field.tsx — pixel font invariants', () => {
   it('every glyph is exactly 3 columns × 5 rows', () => {
@@ -146,5 +156,90 @@ describe('Field.tsx — sprite config selection', () => {
     expect(wr.visor).toBe(true);
     expect(cb.helmetStyle).toBe('flat');
     expect(cb.visor).toBe(true);
+  });
+});
+
+describe('Field.tsx — play animation selection', () => {
+  const ctx = {} as CanvasRenderingContext2D;
+  const canvas = { width: FIELD_W, height: FIELD_H } as HTMLCanvasElement;
+
+  function frame(parent: string, sub: string, progress: number) {
+    return computeFrame(ctx, canvas, {
+      yardline_before: 50,
+      yards: 12,
+      off_call: { parent, sub },
+      scoring_event: null,
+    }, progress, 1, 0);
+  }
+
+  it('uses the run-inside and run-outside branches for the ball carrier', () => {
+    expect(frame('run', 'inside', 0.25).positions.some((p) => p.role === 'R')).toBe(true);
+    expect(frame('run', 'outside', 0.25).positions.some((p) => p.role === 'R')).toBe(true);
+  });
+
+  it('uses the pass-deep and pass-short QB drop branches', () => {
+    const deepQb = frame('pass', 'deep', 0.5).positions.find((p) => p.role === 'Q');
+    const shortQb = frame('pass', 'short', 0.5).positions.find((p) => p.role === 'Q');
+
+    expect(deepQb?.x).toBe(182);
+    expect(shortQb?.x).toBe(209);
+  });
+
+  it('snaps punts backward and lands at the authoritative yardline', () => {
+    const result = {
+      yardline_before: 50,
+      yardline_after: 70,
+      yards: 20,
+      off_call: { parent: 'punt', sub: 'inside' },
+      scoring_event: null,
+    };
+    const snap = computeFrame(ctx, canvas, result, 0.3, 1, 0);
+    const landing = computeFrame(ctx, canvas, result, 1, 1, 0);
+
+    expect(snap.ball.x).toBeLessThan(FIELD_W / 2);
+    expect(landing.ball.x).toBeCloseTo(FIELD_W * 0.7);
+  });
+
+  it('snaps field goals backward before kicking toward the goal', () => {
+    const result = {
+      yardline_before: 70,
+      yardline_after: 70,
+      yards: 0,
+      off_call: { parent: 'fg', sub: 'inside' },
+      scoring_event: 'fg',
+    };
+    const snap = computeFrame(ctx, canvas, result, 0.2, 1, 0);
+    const kick = computeFrame(ctx, canvas, result, 1, 1, 0);
+
+    expect(snap.ball.x).toBeLessThan(FIELD_W * 0.7);
+    expect(kick.ball.x).toBe(FIELD_W);
+  });
+});
+
+describe('Field.tsx — possession palettes', () => {
+  it('maps the possessing team to offense for static lineups', () => {
+    expect(teamsForPossession(0)).toEqual([0, 1]);
+    expect(teamsForPossession(1)).toEqual([1, 0]);
+  });
+
+  it('assigns animated offensive and defensive sprites from possession', () => {
+    const frame = computeFrame(
+      {} as CanvasRenderingContext2D,
+      { width: FIELD_W, height: FIELD_H } as HTMLCanvasElement,
+      {
+        yardline_before: 50,
+        yards: 8,
+        off_call: { parent: 'pass', sub: 'short' },
+        scoring_event: null,
+      },
+      0.25,
+      -1,
+      1,
+    );
+
+    const offense = frame.positions.filter((p) => p.role !== 'D' && p.role !== 'C');
+    const defense = frame.positions.filter((p) => p.role === 'D' || p.role === 'C');
+    expect(offense.every((p) => p.team === 1)).toBe(true);
+    expect(defense.every((p) => p.team === 0)).toBe(true);
   });
 });

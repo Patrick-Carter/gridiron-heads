@@ -366,6 +366,10 @@ function spriteConfigFor(role: string, teamIdx: 0 | 1, slot = 0): SpriteConfig {
   }
 }
 
+function teamsForPossession(possessionIdx: 0 | 1): [0 | 1, 0 | 1] {
+  return possessionIdx === 0 ? [0, 1] : [1, 0];
+}
+
 // =============== Field rendering ==============================================
 /** Deterministic pseudo-random for crowd pixels (stable per pixel coord). */
 function crowdPixel(x: number, y: number, seed = 1337): boolean {
@@ -831,13 +835,15 @@ function computeFrame(
   result: any,
   progress: number,
   direction: 1 | -1,
+  possessionIdx: 0 | 1,
 ): AnimFrame {
   const w = canvas.width;
   const los = result.yardline_before ?? 50;
   const yards = result.yards ?? 0;
   const parent = result.off_call?.parent ?? 'run';
   const sub = result.off_call?.sub ?? 'inside';
-  const playKey = `${parent}-${sub}`;
+  const playKey = parent === 'punt' || parent === 'fg' ? parent : `${parent}-${sub}`;
+  const [offenseTeam, defenseTeam] = teamsForPossession(possessionIdx);
 
   // Build the lineup at the LOS (for the snap frame).
   const lineup: Lineup =
@@ -930,18 +936,18 @@ function computeFrame(
     case 'punt': {
       if (progress < 0.3) {
         const t = progress / 0.3;
-        const toX = losPx + 14 * YARD * direction;
+        const toX = losPx - 14 * YARD * direction;
         ballX = losPx + (toX - losPx) * t;
         ballY = FIELD_H * 0.50 - Math.sin(t * Math.PI) * 3;
         ballAngle = Math.PI;
       } else if (progress < 0.55) {
-        ballX = losPx + 14 * YARD * direction;
+        ballX = losPx - 14 * YARD * direction;
         ballY = FIELD_H * 0.50;
         ballAngle = (progress - 0.3) * 4;
       } else {
         const t = (progress - 0.55) / 0.45;
-        const fromX = losPx + 14 * YARD * direction;
-        const targetX = losPx + yards * YARD * direction;
+        const fromX = losPx - 14 * YARD * direction;
+        const targetX = ((result.yardline_after ?? los) / 100) * FIELD_W;
         ballX = fromX + (targetX - fromX) * t;
         ballY = FIELD_H * 0.50 - Math.sin(t * Math.PI) * 50;
         const dx = targetX - fromX;
@@ -953,18 +959,18 @@ function computeFrame(
     case 'fg': {
       if (progress < 0.2) {
         const t = progress / 0.2;
-        const toX = losPx + 7 * YARD * direction;
+        const toX = losPx - 7 * YARD * direction;
         ballX = losPx + (toX - losPx) * t;
         ballY = FIELD_H * 0.50 - Math.sin(t * Math.PI) * 2;
         ballAngle = Math.PI;
       } else if (progress < 0.45) {
-        ballX = losPx + 7 * YARD * direction;
+        ballX = losPx - 7 * YARD * direction;
         ballY = FIELD_H * 0.50;
         ballAngle = (progress - 0.2) * 4;
       } else {
         const t = (progress - 0.45) / 0.55;
-        const fromX = losPx + 7 * YARD * direction;
-        const targetX = losPx + yards * YARD * direction;
+        const fromX = losPx - 7 * YARD * direction;
+        const targetX = direction === 1 ? FIELD_W : 0;
         ballX = fromX + (targetX - fromX) * t;
         ballY = FIELD_H * 0.50 - Math.sin(t * Math.PI) * 50;
         const dx = targetX - fromX;
@@ -1002,121 +1008,121 @@ function computeFrame(
   if (lineup.oline.length) {
     lineup.oline.forEach(([xo, yn], i) => {
       if (parent === 'punt' || parent === 'fg') {
-        drawOne('O', xo, yn, 'O', 0, i, 0);
+        drawOne('O', xo, yn, 'O', offenseTeam, i, 0);
       } else {
-        drawOne('O', xo, yn, 'O', 0, i, xo + offShiftTotal * 0.5);
+        drawOne('O', xo, yn, 'O', offenseTeam, i, xo + offShiftTotal * 0.5);
       }
     });
   }
   if (lineup.qb && (lineup.qb[0] !== 0 || lineup.qb[1] !== 0)) {
-    if (parent === 'pass-deep') {
+    if (playKey === 'pass-deep') {
       const drop = Math.min(progress / 0.4, 1) * 7;
-      drawOne('Q', lineup.qb[0] - drop, lineup.qb[1], 'Q', 0, 0);
-    } else if (parent === 'pass-short') {
-      drawOne('Q', lineup.qb[0] - 3 * progress, lineup.qb[1], 'Q', 0, 0);
-    } else if (parent === 'run-inside') {
-      drawOne('Q', lineup.qb[0] + 1 * progress, lineup.qb[1] - 0.02 * progress, 'Q', 0, 0);
-    } else if (parent === 'run-outside') {
-      drawOne('Q', lineup.qb[0] + 0.5 * progress, lineup.qb[1], 'Q', 0, 0);
+      drawOne('Q', lineup.qb[0] - drop, lineup.qb[1], 'Q', offenseTeam, 0);
+    } else if (playKey === 'pass-short') {
+      drawOne('Q', lineup.qb[0] - 3 * progress, lineup.qb[1], 'Q', offenseTeam, 0);
+    } else if (playKey === 'run-inside') {
+      drawOne('Q', lineup.qb[0] + 1 * progress, lineup.qb[1] - 0.02 * progress, 'Q', offenseTeam, 0);
+    } else if (playKey === 'run-outside') {
+      drawOne('Q', lineup.qb[0] + 0.5 * progress, lineup.qb[1], 'Q', offenseTeam, 0);
     } else {
-      drawOne('Q', lineup.qb[0], lineup.qb[1], 'Q', 0, 0);
+      drawOne('Q', lineup.qb[0], lineup.qb[1], 'Q', offenseTeam, 0);
     }
   }
   if (lineup.wr && lineup.wr.length) {
     lineup.wr.forEach(([xo, yn], i) => {
-      if (parent === 'pass-deep') {
+      if (playKey === 'pass-deep') {
         const deepRoute = 25 * progress;
-        drawOne('W', xo + deepRoute, yn - 0.06 * progress, 'W', 0, i);
-      } else if (parent === 'pass-short') {
+        drawOne('W', xo + deepRoute, yn - 0.06 * progress, 'W', offenseTeam, i);
+      } else if (playKey === 'pass-short') {
         const shortRoute = 5 * progress;
-        drawOne('W', xo + shortRoute, yn - 0.04 * progress, 'W', 0, i);
-      } else if (parent === 'run-outside') {
+        drawOne('W', xo + shortRoute, yn - 0.04 * progress, 'W', offenseTeam, i);
+      } else if (playKey === 'run-outside') {
         const sweepDir = (sub === 'outside') ? 1 : -1;
-        drawOne('W', xo + 6 * progress, yn, 'W', 0, i, 0, sweepDir * 0.04 * progress);
+        drawOne('W', xo + 6 * progress, yn, 'W', offenseTeam, i, 0, sweepDir * 0.04 * progress);
       } else {
-        drawOne('W', xo + 2 * progress, yn, 'W', 0, i);
+        drawOne('W', xo + 2 * progress, yn, 'W', offenseTeam, i);
       }
     });
   }
   if (lineup.rb) {
-    if (parent === 'run-inside') {
-      drawOne('R', lineup.rb[0] + offShiftTotal, lineup.rb[1], 'R', 0, 0);
-    } else if (parent === 'run-outside') {
+    if (playKey === 'run-inside') {
+      drawOne('R', lineup.rb[0] + offShiftTotal, lineup.rb[1], 'R', offenseTeam, 0);
+    } else if (playKey === 'run-outside') {
       const sweepDir = (sub === 'outside') ? 1 : -1;
-      drawOne('R', lineup.rb[0] + offShiftTotal, lineup.rb[1] + sweepDir * 0.10 * progress, 'R', 0, 0);
+      drawOne('R', lineup.rb[0] + offShiftTotal, lineup.rb[1] + sweepDir * 0.10 * progress, 'R', offenseTeam, 0);
     }
   }
-  if (lineup.snapper) drawOne('S', lineup.snapper[0], lineup.snapper[1], 'S', 0, 0);
+  if (lineup.snapper) drawOne('S', lineup.snapper[0], lineup.snapper[1], 'S', offenseTeam, 0);
   if (lineup.holder) {
     if (parent === 'fg' && progress < 0.45) {
-      drawOne('H', lineup.holder[0], lineup.holder[1] + 0.02, 'H', 0, 0);
+      drawOne('H', lineup.holder[0], lineup.holder[1] + 0.02, 'H', offenseTeam, 0);
     } else if (parent === 'fg' && progress < 0.6) {
-      drawOne('H', lineup.holder[0], lineup.holder[1] + 0.04, 'H', 0, 0);
+      drawOne('H', lineup.holder[0], lineup.holder[1] + 0.04, 'H', offenseTeam, 0);
     } else {
-      drawOne('H', lineup.holder[0], lineup.holder[1], 'H', 0, 0);
+      drawOne('H', lineup.holder[0], lineup.holder[1], 'H', offenseTeam, 0);
     }
   }
   if (lineup.kicker) {
     if (parent === 'fg' && progress > 0.4 && progress < 0.5) {
-      drawOne('K', lineup.kicker[0], lineup.kicker[1] - 0.04, 'K', 0, 0);
+      drawOne('K', lineup.kicker[0], lineup.kicker[1] - 0.04, 'K', offenseTeam, 0);
     } else if (parent === 'fg' && progress >= 0.5 && progress < 0.55) {
-      drawOne('K', lineup.kicker[0], lineup.kicker[1] - 0.01, 'K', 0, 0);
+      drawOne('K', lineup.kicker[0], lineup.kicker[1] - 0.01, 'K', offenseTeam, 0);
     } else {
-      drawOne('K', lineup.kicker[0], lineup.kicker[1], 'K', 0, 0);
+      drawOne('K', lineup.kicker[0], lineup.kicker[1], 'K', offenseTeam, 0);
     }
   }
   if (lineup.punter) {
     if (parent === 'punt' && progress > 0.25 && progress < 0.55) {
-      drawOne('P', lineup.punter[0], lineup.punter[1], 'P', 0, 0);
+      drawOne('P', lineup.punter[0], lineup.punter[1], 'P', offenseTeam, 0);
     } else if (parent === 'punt' && progress >= 0.55 && progress < 0.6) {
-      drawOne('P', lineup.punter[0], lineup.punter[1] + 0.04, 'P', 0, 0);
+      drawOne('P', lineup.punter[0], lineup.punter[1] + 0.04, 'P', offenseTeam, 0);
     } else {
-      drawOne('P', lineup.punter[0], lineup.punter[1], 'P', 0, 0);
+      drawOne('P', lineup.punter[0], lineup.punter[1], 'P', offenseTeam, 0);
     }
   }
   if (lineup.gunner) {
     lineup.gunner.forEach(([xo, yn], i) => {
       const race = (parent === 'punt' ? 18 : 0) * progress;
-      drawOne('G', xo + race, yn, 'G', 0, i);
+      drawOne('G', xo + race, yn, 'G', offenseTeam, i);
     });
   }
 
-  // Defense (always team 1)
+  // Defense
   if (lineup.dline && lineup.dline.length) {
     lineup.dline.forEach(([xo, yn], i) => {
       let xShift = 0;
-      if (parent === 'run-inside') xShift = defShiftTotal;
-      else if (parent === 'run-outside') {
+      if (playKey === 'run-inside') xShift = defShiftTotal;
+      else if (playKey === 'run-outside') {
         const sweepDir = (sub === 'outside') ? 1 : -1;
-        drawOne('D', xo + defShiftTotal * 0.6, yn + sweepDir * 0.03 * progress, 'D', 1, i);
+        drawOne('D', xo + defShiftTotal * 0.6, yn + sweepDir * 0.03 * progress, 'D', defenseTeam, i);
         return;
-      } else if (parent === 'pass-deep' || parent === 'pass-short') {
+      } else if (playKey === 'pass-deep' || playKey === 'pass-short') {
         const rushX = Math.min(progress * 4, 3);
-        drawOne('D', xo + rushX, yn, 'D', 1, i);
+        drawOne('D', xo + rushX, yn, 'D', defenseTeam, i);
         return;
       } else if (parent === 'fg' || parent === 'punt') {
         if (progress > 0.45 && progress < 0.55) {
-          drawOne('D', xo + 3 * (progress - 0.45) / 0.1, yn, 'D', 1, i);
+          drawOne('D', xo + 3 * (progress - 0.45) / 0.1, yn, 'D', defenseTeam, i);
           return;
         }
-        drawOne('D', xo, yn, 'D', 1, i);
+        drawOne('D', xo, yn, 'D', defenseTeam, i);
         return;
       } else {
         xShift = defShiftTotal * 0.5;
       }
-      drawOne('D', xo + xShift, yn, 'D', 1, i);
+      drawOne('D', xo + xShift, yn, 'D', defenseTeam, i);
     });
   }
   if (lineup.cb && lineup.cb.length) {
     lineup.cb.forEach(([xo, yn], i) => {
-      if (parent === 'pass-deep') {
+      if (playKey === 'pass-deep') {
         const drop = Math.min(progress * 12, 10);
-        drawOne('C', xo + drop, yn + (i === 0 ? -0.04 : 0.04) * progress, 'C', 1, i);
-      } else if (parent === 'pass-short') {
+        drawOne('C', xo + drop, yn + (i === 0 ? -0.04 : 0.04) * progress, 'C', defenseTeam, i);
+      } else if (playKey === 'pass-short') {
         const drop = Math.min(progress * 6, 5);
-        drawOne('C', xo + drop, yn, 'C', 1, i);
+        drawOne('C', xo + drop, yn, 'C', defenseTeam, i);
       } else {
-        drawOne('C', xo, yn, 'C', 1, i);
+        drawOne('C', xo, yn, 'C', defenseTeam, i);
       }
     });
   }
@@ -1145,7 +1151,7 @@ function computeFrame(
 
   // Ball trail (last 4 frames) — for pass/fg/punt arcs only
   const ballTrail: AnimFrame['ballTrail'] = [];
-  if (parent === 'pass-deep' || parent === 'pass-short' || parent === 'punt' || parent === 'fg') {
+  if (playKey === 'pass-deep' || playKey === 'pass-short' || parent === 'punt' || parent === 'fg') {
     for (let i = 1; i <= 4; i++) {
       const pastProgress = Math.max(0, progress - i * 0.04);
       // Recompute ball position at pastProgress (approximate)
@@ -1161,7 +1167,7 @@ function computeFrame(
   }
 
   // Particles — emit dust when RB crosses the LOS on a run, on TDs, on sacks
-  if (parent === 'run-inside' && progress > 0.45 && progress < 0.55 && particles.length < 30) {
+  if (playKey === 'run-inside' && progress > 0.45 && progress < 0.55 && particles.length < 30) {
     const losPxNow = losPx;
     for (let i = 0; i < 3; i++) {
       particles.push({
@@ -1264,34 +1270,36 @@ function drawStaticLineup(
   ctx: CanvasRenderingContext2D,
   ballYardline: number,
   direction: 1 | -1,
+  possessionIdx: 0 | 1,
 ) {
   const off = buildStandard();
-  // Offense at LOS (team 0)
+  const [offenseTeam, defenseTeam] = teamsForPossession(possessionIdx);
+  // Offense at LOS
   if (off.qb) {
     const [x, y] = toCanvas(off.qb[0], off.qb[1], ballYardline, direction);
     drawSprite(ctx, Math.round(x - SPRITE_SIZE / 2), Math.round(y - SPRITE_SIZE / 2),
-      spriteConfigFor('Q', 0, 0));
+      spriteConfigFor('Q', offenseTeam, 0));
   }
   off.oline.forEach(([xo, yn], i) => {
     const [x, y] = toCanvas(xo, yn, ballYardline, direction);
     drawSprite(ctx, Math.round(x - SPRITE_SIZE / 2), Math.round(y - SPRITE_SIZE / 2),
-      spriteConfigFor('O', 0, i));
+      spriteConfigFor('O', offenseTeam, i));
   });
   off.wr.forEach(([xo, yn], i) => {
     const [x, y] = toCanvas(xo, yn, ballYardline, direction);
     drawSprite(ctx, Math.round(x - SPRITE_SIZE / 2), Math.round(y - SPRITE_SIZE / 2),
-      spriteConfigFor('W', 0, i));
+      spriteConfigFor('W', offenseTeam, i));
   });
-  // Defense (team 1)
+  // Defense
   off.dline.forEach(([xo, yn], i) => {
     const [x, y] = toCanvas(xo, yn, ballYardline, direction);
     drawSprite(ctx, Math.round(x - SPRITE_SIZE / 2), Math.round(y - SPRITE_SIZE / 2),
-      spriteConfigFor('D', 1, i));
+      spriteConfigFor('D', defenseTeam, i));
   });
   off.cb.forEach(([xo, yn], i) => {
     const [x, y] = toCanvas(xo, yn, ballYardline, direction);
     drawSprite(ctx, Math.round(x - SPRITE_SIZE / 2), Math.round(y - SPRITE_SIZE / 2),
-      spriteConfigFor('C', 1, i));
+      spriteConfigFor('C', defenseTeam, i));
   });
 }
 
@@ -1346,6 +1354,7 @@ export interface FieldProps {
   playResult: any | null;
   ballYardline: number;
   offenseDirection: 1 | -1;
+  possessionIdx: 0 | 1;
   isAnimating: boolean;
   onAnimationDone?: () => void;
   homeName: string;
@@ -1363,6 +1372,7 @@ export default function Field({
   playResult,
   ballYardline,
   offenseDirection,
+  possessionIdx,
   isAnimating,
   onAnimationDone,
   homeName,
@@ -1396,8 +1406,8 @@ export default function Field({
     drawFieldBase(ctx, ballYardline, offenseDirection, distance, homeName, awayName);
     drawCrowdBand(ctx, FIELD_BOTTOM);
     drawStatusBar(ctx, down, distance, ballYardline, offenseDirection);
-    drawStaticLineup(ctx, ballYardline, offenseDirection);
-  }, [ballYardline, playResult, offenseDirection, homeName, awayName, homeScore, awayScore, down, distance]);
+    drawStaticLineup(ctx, ballYardline, offenseDirection, possessionIdx);
+  }, [ballYardline, playResult, offenseDirection, possessionIdx, homeName, awayName, homeScore, awayScore, down, distance]);
 
   // Animation effect
   useEffect(() => {
@@ -1436,7 +1446,8 @@ export default function Field({
       drawCrowdBand(ctx, FIELD_BOTTOM);
       drawStatusBar(ctx, down, distance, animLosYardline, direction);
 
-      const frame = computeFrame(ctx, canvas, playResult, progress, direction);
+      const playPossessionIdx: 0 | 1 = direction === 1 ? 0 : 1;
+      const frame = computeFrame(ctx, canvas, playResult, progress, direction, playPossessionIdx);
       drawAnimFrame(ctx, canvas, frame);
 
       // Scoring flash overlay on top of everything
@@ -1460,14 +1471,14 @@ export default function Field({
         drawFieldBase(ctx, ballYardline, offenseDirection, distance, homeName, awayName);
         drawCrowdBand(ctx, FIELD_BOTTOM);
         drawStatusBar(ctx, down, distance, ballYardline, offenseDirection);
-        drawStaticLineup(ctx, ballYardline, offenseDirection);
+        drawStaticLineup(ctx, ballYardline, offenseDirection, possessionIdx);
       }
     };
     animationRef.current = requestAnimationFrame(animate);
     return () => {
       if (animationRef.current != null) cancelAnimationFrame(animationRef.current);
     };
-  }, [playResult, isAnimating, ballYardline, offenseDirection, homeName, awayName, homeScore, awayScore, down, distance]);
+  }, [playResult, isAnimating, ballYardline, offenseDirection, possessionIdx, homeName, awayName, homeScore, awayScore, down, distance]);
 
   return (
     <div
@@ -1493,6 +1504,8 @@ export const __test = {
   SPRITE_SIZE,
   FONT_3x5,
   spriteConfigFor,
+  teamsForPossession,
+  computeFrame,
   jerseyNumFor,
   drawSprite,
 };

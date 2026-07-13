@@ -34,6 +34,9 @@ export interface ResolveInput {
    *  Defaults to +1 for backwards compatibility with callers that don't yet
    *  pass it (test fixtures). */
   offense_direction?: 1 | -1;
+  /** Current down. Optional so existing callers retain their prior behavior;
+   *  required for `4th_down` QB modifiers to activate. */
+  down?: 1 | 2 | 3 | 4;
 }
 
 export interface ResolveOutput {
@@ -80,43 +83,54 @@ export const LINE_ROLL_GAP_LEAN = 5;     // roll gap for "lean" (yardage nudge)
 export const LINE_ROLL_GAP_DOMINATE = 15; // roll gap for "dominate" (flip outcome)
 // ======================================================================
 
-function applyPctMods(
+function modifierApplies(m: QBModifier, parent: PlayParent, down: ResolveInput['down']): boolean {
+  return m.scope === 'all_plays' || m.scope === parent || (m.scope === '4th_down' && down === 4);
+}
+
+function applySkillPct(
   base: number,
   mods: QBModifier[] | undefined,
   parent: PlayParent,
+  down: ResolveInput['down'],
+  stat: 'off_skill_pct' | 'def_skill_pct',
 ): number {
   if (!mods) return base;
   let v = base;
   for (const m of mods) {
-    if (m.scope !== parent && m.scope !== 'all_plays') continue;
-    if (m.stat === 'off_skill_pct' || m.stat === 'def_skill_pct') {
+    if (modifierApplies(m, parent, down) && m.stat === stat) {
       v = v * (1 + m.value / 100);
     }
   }
   return Math.max(1, Math.min(100, v));
 }
 
-function applyYardsPct(yards: number, mods: QBModifier[] | undefined, parent: PlayParent): number {
-  if (!mods || yards === 0) return yards;
+function applyYardsPct(
+  yards: number,
+  mods: QBModifier[] | undefined,
+  parent: PlayParent,
+  down: ResolveInput['down'],
+): number {
+  // yards_pct is a buff: it improves gains but never magnifies a loss.
+  if (!mods || yards <= 0) return yards;
   let mult = 1;
   for (const m of mods) {
-    if (m.scope !== parent && m.scope !== 'all_plays') continue;
+    if (!modifierApplies(m, parent, down)) continue;
     if (m.stat === 'yards_pct') mult *= 1 + m.value / 100;
   }
   if (mult === 1) return yards;
-  // Apply multiplicative scaling, then round outward (preserve direction sign).
-  return yards > 0 ? Math.max(1, Math.round(yards * mult)) : Math.min(-1, Math.round(yards * mult));
+  return Math.max(1, Math.round(yards * mult));
 }
 
 function applyTurnoverMod(
   baseChance: number,
   mods: QBModifier[] | undefined,
   parent: PlayParent,
+  down: ResolveInput['down'],
 ): number {
   if (!mods) return baseChance;
   let c = baseChance;
   for (const m of mods) {
-    if (m.scope !== parent && m.scope !== 'all_plays') continue;
+    if (!modifierApplies(m, parent, down)) continue;
     if (m.stat === 'turnover_chance_pct') c = c * (1 - m.value / 100);
   }
   return Math.max(0, Math.min(1, c));
@@ -141,8 +155,8 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
   let off_skill = input.off_skill;
   let def_skill = input.def_skill;
   if (parent === 'run' || parent === 'pass') {
-    off_skill = applyPctMods(off_skill, input.qb_off_modifiers, parent);
-    def_skill = applyPctMods(def_skill, input.qb_def_modifiers, parent);
+    off_skill = applySkillPct(off_skill, input.qb_off_modifiers, parent, input.down, 'off_skill_pct');
+    def_skill = applySkillPct(def_skill, input.qb_def_modifiers, parent, input.down, 'def_skill_pct');
   }
 
   // Skill roll. When the defense guesses the wrong parent, the offense auto-wins
@@ -234,7 +248,20 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
     // Stuff play → +15% fumble chance on top of base.
     turnover_chance = Math.min(1, turnover_chance + 0.15);
   }
-  turnover_chance = applyTurnoverMod(turnover_chance, input.qb_off_modifiers, parent);
+  // An unresolved skill-roll tie is explicitly a dead play with no turnover.
+  // A DOMINATE line result is exempt because it has changed the winner.
+  const skill_roll_tied = (parent === 'run' || parent === 'pass')
+    && parent_match
+    && off_roll === def_roll;
+  if (skill_roll_tied && !line_dominated_offense && !line_dominated_defense) {
+    turnover_chance = 0;
+  }
+  turnover_chance = applyTurnoverMod(
+    turnover_chance,
+    input.qb_off_modifiers,
+    parent,
+    input.down,
+  );
 
   const turnover = rng() < turnover_chance;
 
@@ -291,7 +318,7 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
         yards -= 2;
       }
     }
-    yards = applyYardsPct(yards, input.qb_off_modifiers, parent);
+    yards = applyYardsPct(yards, input.qb_off_modifiers, parent, input.down);
     // Cap yards at the remaining distance to the OFFENSE'S goal line so a play
     // can't produce an impossible gain (e.g., +20 from the 75-yard line when
     // attacking toward 100 → 25yds remaining; same for -1 direction at the 25
@@ -300,7 +327,7 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
     if (yards > 0 && typeof input.yardline_before === 'number') {
       const dir = input.offense_direction ?? 1;
       const maxGain = dir === 1 ? 100 - input.yardline_before : input.yardline_before;
-      if (yards > maxGain) yards = Math.max(1, maxGain);
+      if (yards > maxGain) yards = maxGain;
     } else if (yards < 0 && typeof input.yardline_before === 'number') {
       // Cap losses at the distance to the OFFENSE'S OWN goal line.
       // +1 offense at yardline 25 → can lose at most 25yds (own end zone = safety).
@@ -308,7 +335,7 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
       const dir = input.offense_direction ?? 1;
       const ownGoalYardline = dir === 1 ? 0 : 100;
       const maxLoss = Math.abs(input.yardline_before - ownGoalYardline);
-      if (-yards > maxLoss) yards = -Math.max(1, maxLoss);
+      if (-yards > maxLoss) yards = maxLoss === 0 ? 0 : -maxLoss;
     }
   } else if (line_dominated_offense) {
     // Turnover rolled AND offense owned the line — turnover text already

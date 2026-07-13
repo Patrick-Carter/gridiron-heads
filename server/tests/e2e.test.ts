@@ -150,7 +150,18 @@ describe('2-player end-to-end flow', () => {
     // Each player picks scheme
     const scheme0 = { parent: 'run', sub: 'inside' };
     const scheme1 = { parent: 'run', sub: 'outside' };
+
+    const invalidSchemePromise = waitFor(host, 'session:error');
+    host.emit('game:scheme_pick', { parent: 'banana', sub: 'inside' });
+    expect((await invalidSchemePromise).error).toBe('invalid_scheme');
+
+    const hiddenCallPromise = waitFor(host, 'session:state', (s) =>
+      s.game?.phase === 'awaiting_schemes'
+      && Object.prototype.hasOwnProperty.call(s.pending_schemes ?? {}, hostPlayerId));
     host.emit('game:scheme_pick', scheme0);
+    const hiddenCallState = await hiddenCallPromise;
+    expect(hiddenCallState.pending_schemes[hostPlayerId]).toBeNull();
+    expect(hiddenCallState.pending_schemes[guestPlayerId]).toBeUndefined();
     guest.emit('game:scheme_pick', scheme1);
 
     // Wait for ready_to_snap
@@ -159,7 +170,13 @@ describe('2-player end-to-end flow', () => {
 
     // Snap the ball
     const playResultPromise = waitFor(host, 'play:result');
-    host.emit('game:snap');
+    const offenseId = gameState.players[gameState.game.possession_idx].id;
+    const offenseSocket = offenseId === hostPlayerId ? host : guest;
+    const defenseSocket = offenseId === hostPlayerId ? guest : host;
+    const wrongRolePromise = waitFor(defenseSocket, 'session:error');
+    defenseSocket.emit('game:snap');
+    expect((await wrongRolePromise).error).toBe('not_offense');
+    offenseSocket.emit('game:snap');
     const playMsg = await playResultPromise;
     expect(playMsg.result).toBeTruthy();
     expect(typeof playMsg.result.yards).toBe('number');

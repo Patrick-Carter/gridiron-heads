@@ -58,6 +58,8 @@ export default function Game({
   // Trigger animation + audio when a new play result arrives
   useEffect(() => {
     if (lastPlayResult) {
+      animProgressRef.current = 0;
+      setAnimProgress(0);
       setIsAnimating(true);
       // === Audio: route the result through the synth ============================
       // Crowd noise (playCrowdRoar) ONLY fires on big plays — scoring plays,
@@ -126,6 +128,13 @@ export default function Game({
   }
 
   const pendingMyScheme = state.pending_schemes?.[meId];
+  const hasPendingMyScheme = Object.prototype.hasOwnProperty.call(
+    state.pending_schemes ?? {},
+    meId,
+  );
+  const qbModifier = game.teams[myIdx].qb?.modifier;
+  const realAudibleLimit = 1 + (qbModifier?.stat === 'real_audible_refresh' ? qbModifier.value : 0);
+  const fakeAudibleLimit = 1 + (qbModifier?.stat === 'fake_audible_refresh' ? qbModifier.value : 0);
 
   // Roster overlay — null = closed; 0 = host's team; 1 = guest's team.
   const [rosterIdx, setRosterIdx] = useState<0 | 1 | null>(null);
@@ -152,6 +161,7 @@ export default function Game({
           playResult={lastPlayResult}
           ballYardline={game.ball_yardline}
           offenseDirection={game.possession_idx === 0 ? 1 : -1}
+          possessionIdx={game.possession_idx}
           isAnimating={isAnimating}
           onAnimationDone={handleAnimationDone}
           homeName={players[0]?.name ?? 'HOME'}
@@ -179,17 +189,18 @@ export default function Game({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
         {/* Left: phase-based play call controls */}
         <div className="space-y-3">
-          {game.phase === 'awaiting_schemes' && !pendingMyScheme && (
+          {game.phase === 'awaiting_schemes' && !hasPendingMyScheme && (
             <SchemePicker
               onPick={(parent, sub) => send(EVENTS.SCHEME_PICK, { parent, sub })}
             />
           )}
-          {game.phase === 'awaiting_schemes' && pendingMyScheme && (
+          {game.phase === 'awaiting_schemes' && hasPendingMyScheme && (
             <div className="panel-flash !bg-lime text-center space-y-2 animate-shout">
               <div className="panel-titlebar !mt-0"><span>YOU CALLED!</span><span className="text-xs">Locked</span></div>
               <div className="text-2xl font-black">
-                <span className="chip">{pendingMyScheme.parent.toUpperCase()}</span>{' '}
-                <span className="chip">{pendingMyScheme.sub.toUpperCase()}</span>
+                {pendingMyScheme
+                  ? <><span className="chip">{pendingMyScheme.parent.toUpperCase()}</span>{' '}<span className="chip">{pendingMyScheme.sub.toUpperCase()}</span></>
+                  : <span className="chip">PLAY LOCKED</span>}
               </div>
               <div className="text-sm font-bold text-ink/80">
                 ⏳ Waiting for opponent to lock in…
@@ -224,6 +235,8 @@ export default function Game({
                 currentPlay={pendingMyScheme}
                 audiblesUsed={game.audibles_used?.[myIdx]}
                 fakeAudiblesUsed={game.fake_audibles_used?.[myIdx]}
+                realAudibleLimit={realAudibleLimit}
+                fakeAudibleLimit={fakeAudibleLimit}
                 onAudible={(sub) => send(EVENTS.AUDIBLE, { target_sub: sub })}
                 onFakeAudible={() => send(EVENTS.FAKE_AUDIBLE)}
               />

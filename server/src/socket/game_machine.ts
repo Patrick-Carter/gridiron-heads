@@ -16,6 +16,7 @@ import {
   offenseDirection,
   yardsToEndzone,
   kickoffYardline,
+  SUB_OPTIONS_BY_PARENT,
 } from '@gridiron/shared';
 import type {
   GameState,
@@ -45,8 +46,8 @@ export interface RoomState {
   audible_state: 'none' | 'awaiting_off_audible' | 'awaiting_def_audible';
   /** Sub-options for current audible choice */
   current_play: Play | null;
-  /** RNG instance for current play (pre-resolution) */
-  current_play_rng_seed: number | null;
+  /** Monotonic token used to invalidate stale auto-advance timers. */
+  play_generation: number;
   /** Player id of the CPU opponent, when this is a vs-CPU room. null otherwise. */
   cpu_player_id: string | null;
   /** Last time any socket interacted with this room. Used by the in-memory
@@ -78,7 +79,7 @@ export function newRoom(
     pending_schemes: {},
     audible_state: 'none',
     current_play: null,
-    current_play_rng_seed: null,
+    play_generation: 0,
     cpu_player_id: cpuId,
     last_activity_at: Date.now(),
   };
@@ -262,6 +263,23 @@ export function isValidAudibleSub(
   return flip[current.sub] === target_sub;
 }
 
+/** Validate untrusted socket play payloads. Punt/FG retain a placeholder
+ * subtype in the current Play shape, but that value has no gameplay meaning. */
+export function isValidPlay(value: unknown): value is Play {
+  if (!value || typeof value !== 'object') return false;
+  const { parent, sub } = value as Partial<Play>;
+  if (parent !== 'run' && parent !== 'pass' && parent !== 'punt' && parent !== 'fg') return false;
+  if (sub !== 'inside' && sub !== 'outside' && sub !== 'deep' && sub !== 'short') return false;
+  if (parent === 'punt' || parent === 'fg') return true;
+  return SUB_OPTIONS_BY_PARENT[parent].includes(sub);
+}
+
+export function audibleLimit(team: TeamState, kind: 'real' | 'fake'): number {
+  const stat = kind === 'real' ? 'real_audible_refresh' : 'fake_audible_refresh';
+  const modifier = team.qb?.modifier;
+  return 1 + (modifier?.stat === stat ? modifier.value : 0);
+}
+
 /** Resolve a play given current scheme + audible state. Returns PlayResult. */
 export function resolveCurrentPlay(room: RoomState, seed: number): {
   result: PlayResult;
@@ -278,10 +296,11 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   const def_player_id = room.players[defIdx].id;
   const off_play = room.pending_schemes[off_player_id];
   const def_play = room.pending_schemes[def_player_id];
+  if (!off_play || !def_play) throw new Error('missing scheme');
 
-  // Off audible: off_idx has audibles_used[offIdx] tracking
-  const offAudibleUsed = game.audibles_used[offIdx] > 0 ? off_play : null;
-  const offFakeUsed = game.fake_audibles_used[offIdx] > 0 ? null : null; // not tracked in pending_schemes
+  const down_before = game.down;
+  const distance_before = game.distance;
+  const yardline_before = game.ball_yardline;
 
   // Determine off_audible / def_audible / off_fake_audible from game state
   // For simplicity in v1: audibles are tracked separately, not via pending_schemes.
@@ -305,12 +324,13 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       qb_modifiers: qb_off_mods,
     });
     const parent_match = off_play.parent === def_play.parent;
-    const sub_match = off_play.sub === def_play.sub;
-    const turnover = parent_match && sub_match && Math.random() < 0.25; // 25% block chance on perfect read
+    const sub_match = parent_match; // special teams have no meaningful subtype
+    const blocked = parent_match && mulberry32((seed ^ 0x4647424c) >>> 0)() < 0.25;
+    const made = fg.make && !blocked;
     const result: PlayResult = {
-      down: game.down,
-      distance: game.distance,
-      yardline_before: game.ball_yardline,
+      down: down_before,
+      distance: distance_before,
+      yardline_before,
       yardline_after: game.ball_yardline,
       off_call: off_play,
       def_call: def_play,
@@ -319,14 +339,16 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       off_fake_audible: false,
       parent_match,
       sub_match,
-      turnover,
+      turnover: true,
       yards: 0,
-      scoring_event: fg.make ? 'fg' : null,
+      scoring_event: made ? 'fg' : null,
       seed,
       offense_direction,
-      text_recap: fg.make
-        ? `FIELD GOAL IS GOOD! (${fg.total} > ${ytg})`
-        : `FG missed (${fg.total} ≤ ${ytg})`,
+      text_recap: blocked
+        ? 'FIELD GOAL BLOCKED! Defense takes over.'
+        : made
+          ? `FIELD GOAL IS GOOD! (${fg.total} > ${ytg})`
+          : `FG missed (${fg.total} ≤ ${ytg})`,
       // Skill + line rolls are 0 on FG (no roll fires). The FG-specific fields
       // below populate the FG matchup rect.
       off_roll: 0,
@@ -346,7 +368,7 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       fg_total: fg.total,
       fg_power_eff: fg.power_used,
     };
-    if (fg.make) {
+    if (made) {
       game.scores = addPoints(game.scores, game.possession_idx, 0.5);
       // Flip first so offenseDirection(game) reflects the NEW offense, then
       // place the ball at their own 25 (dir-aware absolute spot).
@@ -362,29 +384,37 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     game.history.push(result);
     game.last_play_seed = seed;
     const winner = checkWinner(game.scores);
-    if (winner !== null) game.phase = 'ended';
-    else game.phase = 'between_plays';
-    return { result, scoring_event: fg.make ? 'fg' : null };
+    if (winner !== null) {
+      game.phase = 'ended';
+      room.players.forEach((player) => { player.ready = !!player.is_cpu; });
+    } else game.phase = 'between_plays';
+    return { result, scoring_event: made ? 'fg' : null };
   }
 
   // Punt handled: punt is its own play with no skill roll.
   if (off_play.parent === 'punt') {
     const parent_match = off_play.parent === def_play.parent;
-    const sub_match = off_play.sub === def_play.sub;
-    const turnover_chance =
-      parent_match && sub_match ? 0.25 : parent_match ? 0.05 : 0;
-    const turnover = Math.random() < turnover_chance;
+    const sub_match = parent_match; // special teams have no meaningful subtype
+    const blocked = parent_match && mulberry32((seed ^ 0x50554e54) >>> 0)() < 0.25;
     // Punt yardage: 30-50 yard kick (FORWARD in the offense's direction).
     const rng = mulberry32(seed);
     const punt_yards = 30 + Math.floor(rng() * 21);
     const off_dir = offenseDirection(game);
     // Move ball forward from LOS in the offense's direction; clamp to field.
-    let yardline_after = game.ball_yardline + punt_yards * off_dir;
-    yardline_after = Math.max(0, Math.min(100, yardline_after));
+    const receivingFive = off_dir === 1 ? 95 : 5;
+    let yardline_after = blocked
+      ? game.ball_yardline
+      : game.ball_yardline + punt_yards * off_dir;
+    if (!blocked) {
+      yardline_after = off_dir === 1
+        ? Math.min(receivingFive, yardline_after)
+        : Math.max(receivingFive, yardline_after);
+    }
+    const net_punt_yards = Math.abs(yardline_after - game.ball_yardline);
     const result: PlayResult = {
-      down: game.down,
-      distance: game.distance,
-      yardline_before: game.ball_yardline,
+      down: down_before,
+      distance: distance_before,
+      yardline_before,
       yardline_after,
       off_call: off_play,
       def_call: def_play,
@@ -393,14 +423,14 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       off_fake_audible: false,
       parent_match,
       sub_match,
-      turnover,
-      yards: punt_yards,
+      turnover: true,
+      yards: net_punt_yards,
       scoring_event: null,
       seed,
       offense_direction: off_dir,
-      text_recap: turnover
+      text_recap: blocked
         ? `PUNT BLOCKED! Defense takes over.`
-        : `Punt of ${punt_yards} yards.`,
+        : `Punt of ${net_punt_yards} yards.`,
       // Skill + line rolls are 0 on punt (no skill or line roll fires).
       off_roll: 0,
       def_roll: 0,
@@ -414,7 +444,7 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       line_regime: null,
       line_roll_gap: 0,
       // Phase 0: surface the punt roll for the canvas HUD
-      punt_roll: punt_yards,
+      punt_roll: net_punt_yards,
     };
     // Either way, receiving team gets the ball at the absolute landing spot
     // with a fresh 1st & 10 and attacks the OPPOSITE end zone. The yardline
@@ -427,8 +457,10 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     game.history.push(result);
     game.last_play_seed = seed;
     const winner = checkWinner(game.scores);
-    if (winner !== null) game.phase = 'ended';
-    else game.phase = 'between_plays';
+    if (winner !== null) {
+      game.phase = 'ended';
+      room.players.forEach((player) => { player.ready = !!player.is_cpu; });
+    } else game.phase = 'between_plays';
     return { result, scoring_event: null };
   }
 
@@ -452,10 +484,10 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     qb_off_modifiers: qb_off_mods,
     qb_def_modifiers: qb_def_mods,
     seed,
-    yardline_before: game.ball_yardline,
+    yardline_before,
     offense_direction,
+    down: down_before,
   });
-  const yardline_before = game.ball_yardline;
   const adv = advanceAfterPlay(game, resolve.yards);
   let scoring_event: 'td' | 'safety' | null = null;
 
@@ -467,6 +499,7 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   let next_distance = adv.next.distance;
   // Whether the ball changed hands (TO, score, turnover-on-downs)
   let change_of_possession = false;
+  let turnover_on_downs = false;
 
   if (adv.touchdown) {
       // TD → +1 to offense. New offense takes ball at their own 25
@@ -509,6 +542,7 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       next_down = 1;
       next_distance = 10;
       change_of_possession = true;
+      turnover_on_downs = true;
     } else {
       // Normal play: keep offense, apply advanceAfterPlay's down/distance/yardline
       // (next_down/next_distance/next_yardline already set above)
@@ -526,8 +560,8 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   }
 
   const result: PlayResult = {
-    down: game.down,
-    distance: game.distance,
+    down: down_before,
+    distance: distance_before,
     yardline_before,
     yardline_after: game.ball_yardline,
     off_call: off_play,
@@ -542,7 +576,9 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     scoring_event,
     seed,
     offense_direction,
-    text_recap: recapText(resolve, scoring_event, game.down, game.distance),
+    text_recap: turnover_on_downs
+      ? `TURNOVER ON DOWNS! ${resolve.yards > 0 ? `Gain of ${resolve.yards}.` : resolve.yards < 0 ? `Loss of ${Math.abs(resolve.yards)}.` : 'No gain.'}`
+      : recapText(resolve, scoring_event),
     // Phase 0: surface every per-play roll so the client HUD can show
     // what each position group rolled for its skill check
     off_roll: resolve.off_roll,
@@ -562,16 +598,16 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   game.history.push(result);
   game.last_play_seed = seed;
   const winner = checkWinner(game.scores);
-  if (winner !== null) game.phase = 'ended';
-  else game.phase = 'between_plays';
+  if (winner !== null) {
+    game.phase = 'ended';
+    room.players.forEach((player) => { player.ready = !!player.is_cpu; });
+  } else game.phase = 'between_plays';
   return { result, scoring_event };
 }
 
 function recapText(
   r: ReturnType<typeof resolvePlay>,
   scoring: 'td' | 'safety' | null,
-  next_down: 1 | 2 | 3 | 4,
-  next_distance: number,
 ): string {
   if (scoring === 'td') return `TOUCHDOWN! ${r.yards} yards.`;
   if (scoring === 'safety') return `SAFETY! Loss of ${Math.abs(r.yards)} yards.`;
@@ -612,6 +648,21 @@ export function clearAudibles(game: GameState): void {
 
 /** Build a snapshot for broadcasting. */
 export function snapshot(room: RoomState): any {
+  const revealSchemes = Object.keys(room.pending_schemes).length === 2
+    || room.game?.phase !== 'awaiting_schemes';
+  const pending_schemes = revealSchemes
+    ? room.pending_schemes
+    : Object.fromEntries(Object.keys(room.pending_schemes).map((id) => [id, null]));
+  let game: Record<string, unknown> | null = null;
+  if (room.game) {
+    const {
+      _pending_off_audible: _offAudible,
+      _pending_def_audible: _defAudible,
+      _pending_off_fake: _offFake,
+      ...publicGame
+    } = room.game as GameState & Record<string, unknown>;
+    game = publicGame;
+  }
   return {
     session_id: room.session_id,
     players: room.players,
@@ -627,7 +678,7 @@ export function snapshot(room: RoomState): any {
       total: TOTAL_PICKS,
       done: room.draft.current_turn,
     },
-    game: room.game,
-    pending_schemes: room.pending_schemes,
+    game,
+    pending_schemes,
   };
 }
