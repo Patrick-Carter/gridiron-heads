@@ -2,8 +2,10 @@ import { useEffect, useRef } from 'react';
 import type { PlayResult } from '@gridiron/shared';
 import {
   buildPlayPlan,
+  effectsBetween,
   frameAt,
   type OutcomeBanner,
+  type PlayEffect,
   type PlayFrame,
   type PlayPlan,
   type PlayerSprite,
@@ -1560,6 +1562,9 @@ export interface FieldProps {
   /** Called every animation frame with progress 0..1. Used by RollReveal
    *  to sync reveal timing with the canvas animation. */
   onProgress?: (p: number) => void;
+  /** Fires deterministic sound-design cues when their animation tick is
+   * crossed, even if requestAnimationFrame skips over that exact tick. */
+  onEffect?: (effect: PlayEffect) => void;
 }
 
 export default function Field({
@@ -1576,9 +1581,12 @@ export default function Field({
   down,
   distance,
   onProgress,
+  onEffect,
 }: FieldProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
+  const onEffectRef = useRef(onEffect);
+  onEffectRef.current = onEffect;
 
   // Static between-plays render
   useEffect(() => {
@@ -1618,6 +1626,7 @@ export default function Field({
     const duration = plan.durationMs;
     const animLosYardline = playResult.yardline_before ?? ballYardline;
     const shake = shouldShake(playResult);
+    let lastTick = -1;
 
     particles = []; // reset particles on new play
 
@@ -1626,6 +1635,10 @@ export default function Field({
       const progress = Math.min(1, elapsed / duration);
 
       const frame = frameAt(plan, progress);
+      for (const effect of effectsBetween(plan.effects, lastTick, frame.tick)) {
+        onEffectRef.current?.(effect);
+      }
+      lastTick = frame.tick;
 
       // Fixed-tick shake keeps seeded replays identical on every machine.
       ctx.save();

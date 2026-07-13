@@ -316,7 +316,9 @@ function makeEvents(result: PlayAnimationResult, call: Play, outcome: PlayOutcom
   const events: PlayEffect[] = [{ tick: 4, type: 'snap', xOffset: 0, y: 0.5, intensity: 0.5 }];
   if (call.parent === 'run') {
     events.push({ tick: 19, type: 'handoff', xOffset: -3.2, y: f.laneY, intensity: 0.55 });
-    events.push({ tick: 38, type: 'block', xOffset: 1, y: f.laneY, intensity: 0.45 });
+    events.push({ tick: 12, type: 'block', xOffset: 0.4, y: 0.44, intensity: 0.5 });
+    events.push({ tick: 25, type: 'block', xOffset: 0.8, y: 0.56, intensity: 0.6 });
+    events.push({ tick: 38, type: 'block', xOffset: 1, y: f.laneY, intensity: 0.72 });
     if (outcome === 'fumble') {
       events.push({ tick: 61, type: 'impact', xOffset: f.fumbleX, y: f.laneY, intensity: 1 });
       events.push({ tick: 61, type: 'dust', xOffset: f.fumbleX, y: f.laneY, intensity: 0.9 });
@@ -328,6 +330,9 @@ function makeEvents(result: PlayAnimationResult, call: Play, outcome: PlayOutcom
     }
   } else if (call.parent === 'pass') {
     const release = call.sub === 'deep' ? 42 : 34;
+    events.push({ tick: 13, type: 'block', xOffset: -0.3, y: 0.42, intensity: 0.48 });
+    events.push({ tick: 25, type: 'block', xOffset: -1, y: 0.57, intensity: 0.58 });
+    events.push({ tick: 37, type: 'block', xOffset: -1.8, y: 0.5, intensity: 0.66 });
     if (outcome === 'pass_sack') {
       events.push({ tick: 56, type: 'impact', xOffset: result.yards, y: 0.5, intensity: 1 });
     } else {
@@ -343,14 +348,18 @@ function makeEvents(result: PlayAnimationResult, call: Play, outcome: PlayOutcom
       }
     }
   } else if (call.parent === 'punt') {
+    events.push({ tick: 12, type: 'block', xOffset: 0.5, y: 0.43, intensity: 0.55 });
+    events.push({ tick: 22, type: 'block', xOffset: 0.8, y: 0.58, intensity: 0.68 });
     events.push({ tick: 30, type: outcome === 'punt_blocked' ? 'impact' : 'kick', xOffset: -13, y: 0.5, intensity: 0.9 });
     if (outcome === 'punt_blocked') events.push({ tick: 39, type: 'bounce', xOffset: -2, y: f.bounceY, intensity: 1 });
   } else {
+    events.push({ tick: 10, type: 'block', xOffset: 0.4, y: 0.41, intensity: 0.58 });
+    events.push({ tick: 20, type: 'block', xOffset: 0.7, y: 0.59, intensity: 0.72 });
     events.push({ tick: 28, type: outcome === 'field_goal_blocked' ? 'impact' : 'kick', xOffset: -7, y: 0.5, intensity: 0.9 });
     if (outcome === 'field_goal_blocked') events.push({ tick: 38, type: 'bounce', xOffset: -1, y: f.bounceY, intensity: 1 });
   }
   events.push({ tick: 92, type: 'whistle', xOffset: result.yards, y: 0.5, intensity: 0.35 });
-  return events;
+  return events.sort((a, b) => a.tick - b.tick);
 }
 
 function animateRun(ctx: FrameContext, tick: number, players: PlayerSprite[]): BallState {
@@ -647,4 +656,14 @@ export function buildPlayPlan(result: PlayAnimationResult, possessionIdx: 0 | 1)
 export function frameAt(plan: PlayPlan, progress: number): PlayFrame {
   const safeProgress = Number.isFinite(progress) ? clamp(progress, 0, 1) : 0;
   return plan.frames[Math.round(safeProgress * (plan.frames.length - 1))];
+}
+
+/** Returns every event crossed since the prior rendered tick. RAF commonly
+ * skips simulation ticks, but sound cues must still fire exactly once. */
+export function effectsBetween(
+  effects: PlayEffect[],
+  previousTick: number,
+  currentTick: number,
+): PlayEffect[] {
+  return effects.filter((effect) => effect.tick > previousTick && effect.tick <= currentTick);
 }

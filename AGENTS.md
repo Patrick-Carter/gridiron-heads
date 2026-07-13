@@ -93,13 +93,13 @@ HTTP `POST /api/sessions` and `/api/sessions/:id/join` write to SQLite. When the
   - `synth.ts` — ~20 one-shot SFX (snap, thud, TD siren, FG bell/miss, turnover, **UI click, UI hover, scheme select, audible, draft pick, coin flip, possession change, down change, kickoff, victory, defeat, point scored, incomplete pass whistle, error**).
   - `crowd.ts` — `playCrowdRoar(intensity)` one-shot crowd swell + pure `isBigPlay(playResult)` predicate.
 - **Background music is user-controlled.** `App.tsx` starts it on the first valid interaction. The Audio panel has an independent Music slider and mute toggle; all pages with `FlashHeader` expose the panel, and the in-game score strip does too.
-- **Crowd noise is event-driven, not ambient.** `playCrowdRoar()` ONLY fires on big plays:
+- **Crowd noise has two layers.** A low looped stadium bed runs only while `Game.tsx` is mounted; animation-timed reactions handle catches/contact and `playCrowdRoar()` handles big plays:
   - Scoring plays (TD/FG/safety) → strongest swells (TD = 1.5, FG/safety = 0.8)
   - Turnovers → 0.8
   - 1st-down conversions OR 20+ yard gains → roar scaled to yardage (0..1.5)
-  - Routine plays (short gain, no conversion) → thud only, NO crowd noise.
+  - Routine plays get the stadium bed plus restrained catch/tackle reactions.
 - **Wiring**:
-  - `isBigPlay(r)` predicate in `crowd.ts` — Game.tsx checks it before firing `playCrowdRoar`.
+  - `isBigPlay(r)` predicate in `crowd.ts` — Game.tsx checks it before firing the largest `playCrowdRoar`.
   - TD/FG/Safety use their distinctive sting + a delayed crowd roar.
   - Possession change + down change get `playPossessionChange` / `playDownChange`.
   - Global click handler in `App.tsx` fires `playUiClick` on every `.btn-*` press + `playUiHover` on `[data-sfx="hover"]`.

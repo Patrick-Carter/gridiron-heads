@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   PLAY_TICKS,
   buildPlayPlan,
+  effectsBetween,
   frameAt,
   type PlayAnimationResult,
 } from '../src/components/playAnimation.js';
@@ -95,6 +96,16 @@ describe('play animation planner', () => {
 
     expect(offensePush.xOffset).toBeGreaterThan(defensePush.xOffset);
     expect(misreadLb.xOffset).toBeGreaterThan(readingLb.xOffset);
+    expect(offenseLine.effects.filter((event) => event.type === 'block')).toHaveLength(3);
+    const pass = buildPlayPlan(result('pass', 'deep', 'pass_complete'), 0);
+    expect(pass.effects.filter((event) => event.type === 'block')).toHaveLength(3);
+  });
+
+  it('returns every audio event crossed by a skipped render frame once', () => {
+    const plan = buildPlayPlan(result('pass', 'short', 'pass_complete'), 0);
+    expect(effectsBetween(plan.effects, 3, 14).map((event) => event.type)).toEqual(['snap', 'block']);
+    expect(effectsBetween(plan.effects, 14, 24)).toEqual([]);
+    expect(effectsBetween(plan.effects, 24, 38).map((event) => event.type)).toEqual(['block', 'throw', 'block']);
   });
 
   it('shows an interception catch and backward return without changing authoritative advance', () => {

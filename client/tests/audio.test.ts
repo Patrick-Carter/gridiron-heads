@@ -172,7 +172,7 @@ describe('music sequencer', () => {
     bus.initAudio();
 
     expect(music.__test.bpm).toBeGreaterThan(120);
-    expect(music.__test.stepCount).toBe(64);
+    expect(music.__test.stepCount).toBe(128);
     expect(music.isMusicPlaying()).toBe(false);
     expect(() => music.startMusic()).not.toThrow();
     expect(music.isMusicPlaying()).toBe(true);
@@ -219,6 +219,13 @@ describe('SFX smoketests — do not throw with a mock AudioContext', () => {
     synth.initAudio();
     expect(() => synth.playSnap()).not.toThrow();
     expect(() => synth.playThud(1)).not.toThrow();
+    expect(() => synth.playBlock(0.8, 2)).not.toThrow();
+    expect(() => synth.playHandoff()).not.toThrow();
+    expect(() => synth.playPassRelease()).not.toThrow();
+    expect(() => synth.playCatch()).not.toThrow();
+    expect(() => synth.playBallBounce()).not.toThrow();
+    expect(() => synth.playLooseBall()).not.toThrow();
+    expect(() => synth.playWhistle()).not.toThrow();
     expect(() => synth.playTdSiren()).not.toThrow();
     expect(() => synth.playFgBell()).not.toThrow();
     expect(() => synth.playFgMiss()).not.toThrow();
@@ -264,5 +271,18 @@ describe('crowd roar smoketests', () => {
     expect(() => crowd.playCrowdRoar(1)).not.toThrow();
     expect(() => crowd.playCrowdRoar(0.5)).not.toThrow();
     expect(() => crowd.playCrowdRoar(2)).not.toThrow();
+  });
+
+  it('runs and stops the continuous stadium bed', async () => {
+    installMockAudioContext();
+    const crowd = await import('../src/audio/crowd.js');
+    const { initAudio } = await import('../src/audio/_audioBus.js');
+    initAudio();
+    expect(crowd.isCrowdAmbiencePlaying()).toBe(false);
+    expect(() => crowd.startCrowdAmbience()).not.toThrow();
+    expect(crowd.isCrowdAmbiencePlaying()).toBe(true);
+    expect(() => crowd.playCrowdReaction(0.6)).not.toThrow();
+    crowd.stopCrowdAmbience();
+    expect(crowd.isCrowdAmbiencePlaying()).toBe(false);
   });
 });

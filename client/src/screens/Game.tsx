@@ -13,6 +13,13 @@ import {
   initAudio,
   playSnap,
   playThud,
+  playBlock,
+  playHandoff,
+  playPassRelease,
+  playCatch,
+  playBallBounce,
+  playLooseBall,
+  playWhistle,
   playTdSiren,
   playFgBell,
   playFgMiss,
@@ -23,7 +30,14 @@ import {
   playIncomplete,
   playKickoff,
 } from '../audio/synth.js';
-import { playCrowdRoar, isBigPlay } from '../audio/crowd.js';
+import {
+  isBigPlay,
+  playCrowdReaction,
+  playCrowdRoar,
+  startCrowdAmbience,
+  stopCrowdAmbience,
+} from '../audio/crowd.js';
+import type { PlayEffect } from '../components/playAnimation.js';
 import type { SessionSnapshot } from '../hooks/useSession.js';
 import type { Play, PlayResult } from '@gridiron/shared';
 
@@ -55,57 +69,95 @@ export default function Game({
   /** Increments each time a TD/FG/safety play resolves → triggers confetti rain. */
   const [confettiKey, setConfettiKey] = useState<number>(0);
 
-  // Trigger animation + audio when a new play result arrives
+  // Trigger the animation when a new play result arrives. Audio is driven by
+  // the animation event track below so every hit lands on the visual action.
   useEffect(() => {
     if (lastPlayResult) {
       animProgressRef.current = 0;
       setAnimProgress(0);
       setIsAnimating(true);
-      // === Audio: route the result through the synth ============================
-      // Crowd noise (playCrowdRoar) ONLY fires on big plays — scoring plays,
-      // turnovers, 1st downs, and 20+ yard gains. Routine plays get a thud
-      // and nothing else, so the field isn't a constant murmur.
-      const r = lastPlayResult;
-      if (r.scoring_event === 'td') {
-        playTdSiren();
-        setTimeout(() => playPointScored(), 350);
-        setTimeout(() => playCrowdRoar(1.5), 500);
-        setConfettiKey((k) => k + 1);
-      } else if (r.scoring_event === 'fg') {
-        playFgBell();
-        setTimeout(() => playPointScored(), 200);
-        setTimeout(() => playCrowdRoar(0.8), 350);
-        setConfettiKey((k) => k + 1);
-      } else if (r.scoring_event === 'safety') {
-        playFgMiss();
-        setTimeout(() => playThud(1.2), 100);
-        setTimeout(() => playCrowdRoar(0.8), 250);
-        setConfettiKey((k) => k + 1);
-      } else if (r.turnover && !r.scoring_event) {
-        playTurnover();
-        setTimeout(() => playCrowdRoar(0.8), 100);
-      } else if (r.off_call?.parent === 'pass' && r.yards === 0 && !r.turnover) {
-        // Incomplete pass — 3 whistle peeps, no crowd.
-        playIncomplete();
-      } else if (isBigPlay(r)) {
-        // Non-scoring big play (1st down conversion OR 20+ yard gain): solid
-        // thud + crowd roar. Intensity scales with the yardage.
-        const intensity = Math.min(1.5, (r.yards ?? 0) / 18);
-        playThud(intensity);
-        setTimeout(() => playCrowdRoar(intensity), 120);
-        if (r.off_call?.parent === 'punt') {
-          setTimeout(() => playKickoff(), 200);
-        }
-      } else {
-        // Routine play — just a thud. No crowd noise.
-        const intensity = Math.min(1.2, Math.abs(r.yards ?? 0) / 20 + 0.2);
-        playThud(intensity);
-        if (r.off_call?.parent === 'punt') {
-          setTimeout(() => playKickoff(), 120);
-        }
-      }
     }
   }, [lastPlayResult?.seed]);
+
+  // A low stadium bed runs only while the game is mounted. The click handler
+  // retries after App unlocks AudioContext for direct-link browser loads.
+  useEffect(() => {
+    startCrowdAmbience();
+    return stopCrowdAmbience;
+  }, []);
+
+  function finishPlayAudio(r: PlayResult) {
+    if (r.scoring_event === 'td') {
+      playTdSiren();
+      playPointScored();
+      playCrowdRoar(1.5);
+      setConfettiKey((k) => k + 1);
+    } else if (r.scoring_event === 'fg') {
+      playFgBell();
+      playPointScored();
+      playCrowdRoar(1.15);
+      setConfettiKey((k) => k + 1);
+    } else if (r.scoring_event === 'safety') {
+      playTurnover();
+      playCrowdRoar(1.1);
+      setConfettiKey((k) => k + 1);
+    } else if (r.play_outcome === 'field_goal_blocked') {
+      playFgMiss();
+      playTurnover();
+      playCrowdRoar(0.9);
+    } else if (r.play_outcome === 'field_goal_missed') {
+      playFgMiss();
+      playCrowdReaction(0.45);
+    } else if (r.turnover) {
+      playTurnover();
+      playCrowdRoar(1);
+    } else if (isBigPlay(r)) {
+      playCrowdRoar(Math.min(1.35, Math.max(0.75, r.yards / 18)));
+    } else if (r.yards > 0) {
+      playCrowdReaction(Math.min(0.7, 0.28 + r.yards / 30));
+    }
+  }
+
+  function handlePlayEffect(effect: PlayEffect) {
+    const result = lastPlayResult;
+    if (!result) return;
+    switch (effect.type) {
+      case 'snap':
+        playSnap();
+        break;
+      case 'handoff':
+        playHandoff();
+        break;
+      case 'block':
+        playBlock(effect.intensity, effect.tick);
+        break;
+      case 'throw':
+        playPassRelease();
+        break;
+      case 'catch':
+        playCatch(effect.intensity);
+        playCrowdReaction(result.turnover ? 0.75 : 0.48);
+        break;
+      case 'kick':
+        playKickoff();
+        break;
+      case 'impact':
+        playThud(Math.max(0.65, effect.intensity));
+        playCrowdReaction(Math.max(0.3, effect.intensity * 0.55));
+        break;
+      case 'loose_ball':
+        playLooseBall();
+        break;
+      case 'bounce':
+        playBallBounce(effect.intensity);
+        break;
+      case 'whistle':
+        if (result.play_outcome === 'pass_incomplete') playIncomplete();
+        else playWhistle();
+        finishPlayAudio(result);
+        break;
+    }
+  }
 
   // Track possession + down changes for audio cues.
   const prevPossessionRef = useRef(game.possession_idx);
@@ -143,7 +195,10 @@ export default function Game({
   const rosterTeamName = rosterIdx !== null ? players[rosterIdx]?.name ?? '?' : '';
 
   return (
-    <div className="min-h-full p-3 md:p-4 max-w-6xl mx-auto space-y-3 md:space-y-4">
+    <div
+      className="min-h-full p-3 md:p-4 max-w-6xl mx-auto space-y-3 md:space-y-4"
+      onClick={startCrowdAmbience}
+    >
       <ScorePanel
         scores={game.scores}
         myIdx={myIdx}
@@ -164,6 +219,7 @@ export default function Game({
           possessionIdx={game.possession_idx}
           isAnimating={isAnimating}
           onAnimationDone={handleAnimationDone}
+          onEffect={handlePlayEffect}
           homeName={players[0]?.name ?? 'HOME'}
           awayName={players[1]?.name ?? 'AWAY'}
           homeScore={game.scores[0]}
@@ -224,7 +280,7 @@ export default function Game({
                 </div>
               )}
               <button
-                onClick={() => { initAudio(); playSnap(); send(EVENTS.SNAP); }}
+                onClick={() => { initAudio(); send(EVENTS.SNAP); }}
                 className="btn-flash btn-xtra btn-go w-full"
               >
                 ⚡ SNAP! ⚡

@@ -133,6 +133,55 @@ export function playThud(intensity = 1): void {
   playNoise(90, 0.3 * intensity, 260, 0.7);
 }
 
+/** Pads and helmets meeting in the line. Variation prevents repeated hits
+ * from sounding like the same sample retriggered. */
+export function playBlock(intensity = 1, variation = 0): void {
+  const safe = Math.max(0.35, Math.min(1.4, intensity));
+  const body = 92 + (Math.abs(variation) % 4) * 17;
+  playTone(body, 65, 'square', 0.11 * safe, 1, 58);
+  playTone(52, 85, 'triangle', 0.15 * safe, 1, 75);
+  playNoise(55, 0.18 * safe, 520 + (variation % 3) * 120, 0.8);
+}
+
+/** Leather handoff tucked into the runner's pads. */
+export function playHandoff(): void {
+  playTone(185, 45, 'triangle', 0.12, 1, 38);
+  playNoise(32, 0.1, 900, 1.2);
+}
+
+/** Ball leaving the quarterback's hand. */
+export function playPassRelease(): void {
+  playTone(520, 80, 'triangle', 0.09, 1, 70);
+  playNoise(95, 0.11, 2400, 0.8, 'highpass');
+}
+
+/** Catch pop: leather slap followed by the ball settling into the pads. */
+export function playCatch(intensity = 1): void {
+  const safe = Math.max(0.5, Math.min(1.4, intensity));
+  playNoise(38, 0.22 * safe, 1900, 2.4);
+  playTone(155, 70, 'triangle', 0.16 * safe, 1, 62);
+  setTimeout(() => playTone(105, 45, 'square', 0.07 * safe, 1, 38), 28);
+}
+
+/** Football hitting turf after an incompletion, fumble, or blocked kick. */
+export function playBallBounce(intensity = 1): void {
+  const safe = Math.max(0.4, Math.min(1.3, intensity));
+  playTone(130, 55, 'triangle', 0.14 * safe, 1, 48);
+  playNoise(28, 0.12 * safe, 760, 1.4);
+}
+
+/** Loose-ball alarm used at the instant possession becomes uncertain. */
+export function playLooseBall(): void {
+  playTone(330, 70, 'square', 0.17, 1, 62);
+  setTimeout(() => playTone(247, 90, 'square', 0.16, 1, 80), 72);
+}
+
+/** Single end-of-play official's whistle. */
+export function playWhistle(): void {
+  playTone(1760, 115, 'square', 0.12, 2, 100);
+  playTone(2093, 95, 'triangle', 0.08, 2, 80);
+}
+
 /** Touchdown: bright, brassy 16-bit major fanfare. */
 export function playTdSiren(): void {
   const c = _ensureRunning();
