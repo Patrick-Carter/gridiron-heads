@@ -3,19 +3,25 @@
 // Sliders update the respective gain nodes in real time and persist to
 // localStorage via setVolume().
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  DEFAULT_VOLUMES,
   getVolumes,
   initAudio,
   setVolume,
   type Volumes,
-} from '../audio/synth.js';
+} from '../audio/_audioBus.js';
+import { startMusic, stopMusic } from '../audio/music.js';
 
 export default function VolumePanel({ className = '' }: { className?: string }) {
   const [open, setOpen] = useState(false);
   const [volumes, setVolumesState] = useState<Volumes>(() => getVolumes());
   const containerRef = useRef<HTMLDivElement>(null);
+  const lastMusicVolume = useRef(
+    volumes.music > 0 ? volumes.music : DEFAULT_VOLUMES.music,
+  );
   const muted = volumes.master === 0;
+  const musicMuted = volumes.music === 0;
 
   // Click-outside to close
   useEffect(() => {
@@ -43,7 +49,7 @@ export default function VolumePanel({ className = '' }: { className?: string }) 
     setVolumesState((v) => ({ ...v, master: next }));
   }
 
-  function setChan(channel: 'crowd' | 'sfx', value: number) {
+  function setChan(channel: 'music' | 'crowd' | 'sfx', value: number) {
     // Touching a sub-channel also unlocks master (if it was muted)
     if (muted && value > 0) {
       setVolume('master', 0.7);
@@ -51,6 +57,29 @@ export default function VolumePanel({ className = '' }: { className?: string }) 
     }
     setVolume(channel, value);
     setVolumesState((v) => ({ ...v, [channel]: value }));
+    if (channel === 'music') {
+      if (value > 0) {
+        lastMusicVolume.current = value;
+        startMusic();
+      } else {
+        stopMusic();
+      }
+    }
+  }
+
+  function toggleMusic() {
+    initAudio();
+    if (musicMuted) {
+      const next = lastMusicVolume.current || DEFAULT_VOLUMES.music;
+      setVolume('music', next);
+      setVolumesState((v) => ({ ...v, music: next }));
+      startMusic();
+    } else {
+      lastMusicVolume.current = volumes.music;
+      setVolume('music', 0);
+      setVolumesState((v) => ({ ...v, music: 0 }));
+      stopMusic();
+    }
   }
 
   function openPanel() {
@@ -108,6 +137,24 @@ export default function VolumePanel({ className = '' }: { className?: string }) 
           </div>
 
           <SliderRow
+            label="Music"
+            value={volumes.music}
+            onChange={(v) => setChan('music', v)}
+            testId="vol-music"
+            action={
+              <button
+                type="button"
+                onClick={toggleMusic}
+                data-testid="music-toggle"
+                aria-pressed={musicMuted}
+                data-sfx="click"
+                className="border border-ink px-1.5 py-0.5 text-[10px] font-black uppercase hover:bg-sun"
+              >
+                {musicMuted ? 'Play' : 'Mute'}
+              </button>
+            }
+          />
+          <SliderRow
             label="👥 Crowd"
             value={volumes.crowd}
             onChange={(v) => setChan('crowd', v)}
@@ -134,19 +181,25 @@ function SliderRow({
   value,
   onChange,
   testId,
+  action,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
   testId: string;
+  action?: ReactNode;
 }) {
   return (
-    <label className="block">
+    <div className="block">
       <div className="flex items-center justify-between text-xs font-bold mb-0.5">
-        <span>{label}</span>
-        <span className="text-ink/60">{Math.round(value * 100)}</span>
+        <label htmlFor={testId}>{label}</label>
+        <span className="flex items-center gap-1.5">
+          <span className="text-ink/60">{Math.round(value * 100)}</span>
+          {action}
+        </span>
       </div>
       <input
+        id={testId}
         type="range"
         min={0}
         max={1}
@@ -157,6 +210,6 @@ function SliderRow({
         className="w-full accent-sun"
         style={{ accentColor: '#ffd400' }}
       />
-    </label>
+    </div>
   );
 }

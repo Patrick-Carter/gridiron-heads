@@ -2,6 +2,8 @@
 // and optional star stickers. Used as the page hero on Home / Lobby /
 // GameOver. Sits in front of the gradient+splash-star backdrop.
 
+import VolumePanel from './VolumePanel.js';
+
 export default function FlashHeader({
   title,
   kicker,
@@ -13,6 +15,9 @@ export default function FlashHeader({
 }) {
   return (
     <div className="relative flex flex-col items-center justify-center py-6">
+      <div className="absolute left-0 top-2 z-20">
+        <VolumePanel />
+      </div>
       {kicker && (
         <div className="sticker mb-3 animate-wobble">{kicker}</div>
       )}

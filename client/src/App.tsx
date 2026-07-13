@@ -7,6 +7,7 @@ import Join from './screens/Join.js';
 import LobbyBrowser from './screens/LobbyBrowser.js';
 import SessionRouter from './screens/SessionRouter.js';
 import { initAudio, playUiClick, playUiHover } from './audio/synth.js';
+import { startMusic } from './audio/music.js';
 
 export default function App() {
   // Global UI click + hover sounds. Any element matching the .btn-flash /
@@ -16,8 +17,9 @@ export default function App() {
     function onClick(e: MouseEvent) {
       const t = e.target as HTMLElement | null;
       if (!t) return;
+      initAudio();
+      startMusic();
       if (t.closest('.btn-flash, .btn-primary, .btn-go, .btn-danger, .btn-cool, .btn-grape, .btn-ghost, [data-sfx="click"]')) {
-        initAudio();
         playUiClick();
       }
     }

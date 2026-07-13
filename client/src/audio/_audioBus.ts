@@ -1,20 +1,22 @@
-// Shared audio bus — one AudioContext with a 3-channel mix (Master / Crowd /
-// SFX). Both synth.ts (SFX) and crowd.ts (swells) route through this bus so
-// the VolumePanel can mix each channel independently.
+// Shared audio bus — one AudioContext with a 4-channel mix (Master / Music /
+// Crowd / SFX). Every audio module routes through this bus so the VolumePanel
+// can mix each channel independently.
 //
 // Treat this module as internal: external consumers should import from
 // synth.ts / crowd.ts directly. Tests can poke at `__test` for state.
 
-export type Channel = 'master' | 'crowd' | 'sfx';
+export type Channel = 'master' | 'music' | 'crowd' | 'sfx';
 
 export interface Volumes {
   master: number;
+  music: number;
   crowd: number;
   sfx: number;
 }
 
 export const DEFAULT_VOLUMES: Volumes = {
   master: 0.7,
+  music: 0.32,
   crowd: 0.5,
   sfx: 0.7,
 };
@@ -23,6 +25,7 @@ const LS_VOL = 'gridiron:audio_volumes';
 
 let ctx: AudioContext | null = null;
 let masterGain: GainNode | null = null;
+let musicGain: GainNode | null = null;
 let crowdGain: GainNode | null = null;
 let sfxGain: GainNode | null = null;
 
@@ -32,7 +35,7 @@ export function isAudioReady(): boolean {
   return ctx !== null;
 }
 
-/** Idempotent. Creates the AudioContext and 3-bus mixer on first call. */
+/** Idempotent. Creates the AudioContext and 4-bus mixer on first call. */
 export function initAudio(): void {
   if (ctx) {
     ensureRunning();
@@ -43,46 +46,64 @@ export function initAudio(): void {
     if (!AC) return;
     const newCtx: AudioContext = new AC();
     const master = newCtx.createGain();
+    const music = newCtx.createGain();
     const crowd = newCtx.createGain();
     const sfx = newCtx.createGain();
     try {
       const raw = localStorage.getItem(LS_VOL);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (isVolumes(parsed)) volumes = parsed;
+        const stored = readVolumes(parsed);
+        if (stored) volumes = stored;
       }
     } catch {}
     master.gain.value = volumes.master;
+    music.gain.value = volumes.music;
     crowd.gain.value = volumes.crowd;
     sfx.gain.value = volumes.sfx;
+    music.connect(master);
     crowd.connect(master);
     sfx.connect(master);
     master.connect(newCtx.destination);
 
     ctx = newCtx;
     masterGain = master;
+    musicGain = music;
     crowdGain = crowd;
     sfxGain = sfx;
   } catch {
     ctx = null;
     masterGain = null;
+    musicGain = null;
     crowdGain = null;
     sfxGain = null;
   }
 }
 
-function isVolumes(v: any): v is Volumes {
-  return (
-    v && typeof v === 'object' &&
-    typeof v.master === 'number' && typeof v.crowd === 'number' &&
-    typeof v.sfx === 'number'
-  );
+function readVolumes(v: unknown): Volumes | null {
+  if (!v || typeof v !== 'object') return null;
+  const stored = v as Partial<Volumes>;
+  if (
+    typeof stored.master !== 'number' ||
+    typeof stored.crowd !== 'number' ||
+    typeof stored.sfx !== 'number'
+  ) return null;
+  return {
+    master: clamp(stored.master),
+    music: typeof stored.music === 'number' ? clamp(stored.music) : DEFAULT_VOLUMES.music,
+    crowd: clamp(stored.crowd),
+    sfx: clamp(stored.sfx),
+  };
+}
+
+function clamp(value: number): number {
+  return Math.max(0, Math.min(1, value));
 }
 
 export function setVolume(channel: Channel, value: number): void {
-  const v = Math.max(0, Math.min(1, value));
+  const v = clamp(value);
   volumes = { ...volumes, [channel]: v };
-  if (ctx && masterGain && crowdGain && sfxGain) {
+  if (ctx && masterGain && musicGain && crowdGain && sfxGain) {
     const gain = channelGain(channel);
     if (gain) {
       gain.gain.setTargetAtTime(v, ctx.currentTime, 0.02);
@@ -95,6 +116,7 @@ export function setVolume(channel: Channel, value: number): void {
 
 export function setVolumes(v: Partial<Volumes>): void {
   if (v.master !== undefined) setVolume('master', v.master);
+  if (v.music !== undefined) setVolume('music', v.music);
   if (v.crowd !== undefined) setVolume('crowd', v.crowd);
   if (v.sfx !== undefined) setVolume('sfx', v.sfx);
 }
@@ -131,6 +153,12 @@ export function crowdBus(): GainNode | null {
   return crowdGain ?? masterGain;
 }
 
+/** Bus gain for the looping music sequencer. */
+export function musicBus(): GainNode | null {
+  if (!ctx) return null;
+  return musicGain ?? masterGain;
+}
+
 /** Bus gain for SFX. */
 export function sfxBus(): GainNode | null {
   if (!ctx) return null;
@@ -139,6 +167,7 @@ export function sfxBus(): GainNode | null {
 
 function channelGain(channel: Channel): GainNode | null {
   if (channel === 'master') return masterGain;
+  if (channel === 'music') return musicGain;
   if (channel === 'crowd') return crowdGain;
   return sfxGain;
 }
@@ -148,11 +177,13 @@ function channelGain(channel: Channel): GainNode | null {
 export const __test = {
   get ctx() { return ctx; },
   get master() { return masterGain; },
+  get music() { return musicGain; },
   get crowd() { return crowdGain; },
   get sfx() { return sfxGain; },
   reset() {
     ctx = null;
     masterGain = null;
+    musicGain = null;
     crowdGain = null;
     sfxGain = null;
     volumes = { ...DEFAULT_VOLUMES };

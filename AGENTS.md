@@ -84,14 +84,15 @@ HTTP `POST /api/sessions` and `/api/sessions/:id/join` write to SQLite. When the
 - `drawPlayer` size: QB=7px, others=6px. All have a black outline so they stand out against green.
 - `FIELD_W=800, FIELD_H=400, YARD=8` (8px per yard). Lines are `0..10` mapped to `0..800` px.
 
-### 10. Audio architecture (Phase 8 — all generated via Web Audio API)
+### 10. Audio architecture (all generated via Web Audio API)
 - **Single AudioContext**, `initAudio()` once per page (call from any user click). All other modules call into the shared bus.
-- **3-channel mix bus** (`client/src/audio/_audioBus.ts`): Master / Crowd / SFX. VolumePanel reads/writes these gains in [0,1]. Persists to localStorage `gridiron:audio_volumes`.
+- **4-channel mix bus** (`client/src/audio/_audioBus.ts`): Master / Music / Crowd / SFX. VolumePanel reads/writes these gains in [0,1]. Persists to localStorage `gridiron:audio_volumes`.
 - **Modules**:
-  - `_audioBus.ts` — context init, 3 gains, volume API, localStorage persistence. Exposes `__test` for tests.
+  - `_audioBus.ts` — context init, 4 gains, volume API, localStorage persistence. Exposes `__test` for tests.
+  - `music.ts` — original looping 16-bit football march (square lead, triangle bass, noise drums) with a lookahead sequencer. Starts after a user gesture and stops when Music is muted.
   - `synth.ts` — ~20 one-shot SFX (snap, thud, TD siren, FG bell/miss, turnover, **UI click, UI hover, scheme select, audible, draft pick, coin flip, possession change, down change, kickoff, victory, defeat, point scored, incomplete pass whistle, error**).
   - `crowd.ts` — `playCrowdRoar(intensity)` one-shot crowd swell + pure `isBigPlay(playResult)` predicate.
-- **Background music is intentionally absent.** Phase-1 BG chiptune was removed — user found it repetitive. The game is silent except for SFX + targeted crowd swells.
+- **Background music is user-controlled.** `App.tsx` starts it on the first valid interaction. The Audio panel has an independent Music slider and mute toggle; all pages with `FlashHeader` expose the panel, and the in-game score strip does too.
 - **Crowd noise is event-driven, not ambient.** `playCrowdRoar()` ONLY fires on big plays:
   - Scoring plays (TD/FG/safety) → strongest swells (TD = 1.5, FG/safety = 0.8)
   - Turnovers → 0.8
@@ -102,7 +103,7 @@ HTTP `POST /api/sessions` and `/api/sessions/:id/join` write to SQLite. When the
   - TD/FG/Safety use their distinctive sting + a delayed crowd roar.
   - Possession change + down change get `playPossessionChange` / `playDownChange`.
   - Global click handler in `App.tsx` fires `playUiClick` on every `.btn-*` press + `playUiHover` on `[data-sfx="hover"]`.
-  - `VolumePanel.tsx` (replaces `MuteToggle.tsx`) — speaker toggle + popover with 2 sliders (Crowd + SFX). Click speaker = open panel; double-click = master mute.
+  - `VolumePanel.tsx` (replaces `MuteToggle.tsx`) — speaker toggle + popover with 3 sliders (Music + Crowd + SFX) and a dedicated Music mute. Click speaker = open panel; double-click = master mute.
 - **Never** create an `AudioContext` outside `_audioBus.ts`. All sound modules route through `busFor(channel)` / `crowdBus()` so the panel can mute independently.
 - **Never** play a sound during render — gate everything in event handlers / useEffect. Web Audio browsers require user-gesture unlock.
 

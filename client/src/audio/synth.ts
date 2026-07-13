@@ -1,7 +1,8 @@
 // Web Audio synth — no asset deps, no frameworks.
 //
 // All game sound effects via oscillators + noise + filters. Routes through
-// the shared 3-bus mix (Master / Crowd / SFX) defined in `_audioBus.ts`.
+// the shared 4-bus mix (Master / Music / Crowd / SFX) defined in
+// `_audioBus.ts`.
 // See that file for the volume API and persistence.
 //
 // Crowd swells (the "big play" roars) live in crowd.ts to keep them out of
@@ -119,36 +120,37 @@ function playNoise(
 
 // === Existing gameplay sounds (kept stable — Game.tsx already calls these) ===
 
-/** Sharp whistle-snap: high triangle burst + hiss. */
+/** Sharp console snap: a clipped high pulse plus a short noise crack. */
 export function playSnap(): void {
-  playTone(1800, 80, 'triangle', 0.35, 1, 70);
-  playNoise(60, 0.2, 3000, 4);
+  playTone(1760, 45, 'square', 0.25, 1, 40);
+  playNoise(55, 0.26, 3200, 3);
 }
 
 /** Thud on a tackle/loss. Intensity scales with yards lost. */
 export function playThud(intensity = 1): void {
-  playTone(60, 120, 'sine', 0.3 * intensity, 2, 100);
-  playNoise(120, 0.4 * intensity, 200, 0.7);
+  playTone(70, 105, 'triangle', 0.28 * intensity, 2, 90);
+  playTone(42, 145, 'sine', 0.22 * intensity, 2, 125);
+  playNoise(90, 0.3 * intensity, 260, 0.7);
 }
 
-/** TD siren: classic sawtooth arpeggio rising in pitch. */
+/** Touchdown: bright, brassy 16-bit major fanfare. */
 export function playTdSiren(): void {
   const c = _ensureRunning();
   const bus = busFor('sfx');
   if (!c || !bus) return;
   const now = c.currentTime;
-  const notes = [440, 554, 659, 880];
+  const notes = [523, 659, 784, 1047];
   for (let i = 0; i < notes.length; i++) {
-    const t = now + i * 0.12;
+    const t = now + i * 0.105;
     const osc = c.createOscillator();
     const g = c.createGain();
-    osc.type = 'sawtooth';
+    osc.type = i === notes.length - 1 ? 'square' : 'sawtooth';
     osc.frequency.value = notes[i];
-    env(g, t, 0.3, 0.01, 0.18, t + 0.2);
+    env(g, t, 0.25, 0.005, i === notes.length - 1 ? 0.42 : 0.15, t + (i === notes.length - 1 ? 0.45 : 0.17));
     osc.connect(g);
     g.connect(bus);
     osc.start(t);
-    osc.stop(t + 0.25);
+    osc.stop(t + (i === notes.length - 1 ? 0.48 : 0.2));
   }
 }
 

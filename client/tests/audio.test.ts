@@ -3,6 +3,8 @@
 // the SFX / crowd-swells don't throw against a minimal AudioContext mock.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { createElement } from 'react';
 
 // Minimal AudioContext mock — records calls without actually playing audio.
 function installMockAudioContext() {
@@ -106,12 +108,10 @@ describe('audio bus — volume + persistence', () => {
     const bus = await import('../src/audio/_audioBus.js');
     expect(bus.volumes.master).toBeGreaterThan(0);
     expect(bus.volumes.master).toBeLessThanOrEqual(1);
-    for (const ch of ['crowd', 'sfx'] as const) {
+    for (const ch of ['music', 'crowd', 'sfx'] as const) {
       expect(bus.volumes[ch]).toBeGreaterThanOrEqual(0);
       expect(bus.volumes[ch]).toBeLessThanOrEqual(1);
     }
-    // No 'music' channel anymore
-    expect((bus.volumes as any).music).toBeUndefined();
   });
 
   it('setVolume clamps to [0,1] and persists to localStorage', async () => {
@@ -140,9 +140,75 @@ describe('audio bus — volume + persistence', () => {
 
   it('setVolumes updates multiple channels at once', async () => {
     const bus = await import('../src/audio/_audioBus.js');
-    bus.setVolumes({ crowd: 0.2, sfx: 0.3 });
+    bus.setVolumes({ music: 0.1, crowd: 0.2, sfx: 0.3 });
+    expect(bus.getVolumes().music).toBeCloseTo(0.1);
     expect(bus.getVolumes().crowd).toBeCloseTo(0.2);
     expect(bus.getVolumes().sfx).toBeCloseTo(0.3);
+  });
+
+  it('preserves old 3-channel settings when adding the music channel', async () => {
+    localStorage.setItem('gridiron:audio_volumes', JSON.stringify({
+      master: 0.4,
+      crowd: 0.2,
+      sfx: 0.6,
+    }));
+    installMockAudioContext();
+    const bus = await import('../src/audio/_audioBus.js');
+    bus.initAudio();
+    expect(bus.getVolumes()).toEqual({
+      master: 0.4,
+      music: bus.DEFAULT_VOLUMES.music,
+      crowd: 0.2,
+      sfx: 0.6,
+    });
+  });
+});
+
+describe('music sequencer', () => {
+  it('starts once, exposes its score metadata, and stops cleanly', async () => {
+    installMockAudioContext();
+    const bus = await import('../src/audio/_audioBus.js');
+    const music = await import('../src/audio/music.js');
+    bus.initAudio();
+
+    expect(music.__test.bpm).toBeGreaterThan(120);
+    expect(music.__test.stepCount).toBe(64);
+    expect(music.isMusicPlaying()).toBe(false);
+    expect(() => music.startMusic()).not.toThrow();
+    expect(music.isMusicPlaying()).toBe(true);
+    expect(() => music.startMusic()).not.toThrow();
+    music.stopMusic();
+    expect(music.isMusicPlaying()).toBe(false);
+  });
+
+  it('does not start while the music channel is muted', async () => {
+    installMockAudioContext();
+    const bus = await import('../src/audio/_audioBus.js');
+    const music = await import('../src/audio/music.js');
+    bus.initAudio();
+    bus.setVolume('music', 0);
+    music.startMusic();
+    expect(music.isMusicPlaying()).toBe(false);
+  });
+});
+
+describe('music controls', () => {
+  it('offers a persistent music-only mute toggle', async () => {
+    installMockAudioContext();
+    const { default: VolumePanel } = await import('../src/components/VolumePanel.js');
+    const bus = await import('../src/audio/_audioBus.js');
+    const music = await import('../src/audio/music.js');
+    render(createElement(VolumePanel));
+
+    fireEvent.click(screen.getByTestId('volume-toggle'));
+    fireEvent.click(screen.getByTestId('music-toggle'));
+    expect(bus.getVolumes().music).toBe(0);
+    expect(JSON.parse(localStorage.getItem('gridiron:audio_volumes')!).music).toBe(0);
+
+    fireEvent.click(screen.getByTestId('music-toggle'));
+    expect(bus.getVolumes().music).toBeGreaterThan(0);
+    expect(music.isMusicPlaying()).toBe(true);
+    music.stopMusic();
   });
 });
 
