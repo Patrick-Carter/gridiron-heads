@@ -25,12 +25,12 @@ export default function GameOver({
     ? 'FG Shootout'
     : outcome.reason === 'concession'
       ? 'Concession'
-      : '4 Possessions Each';
+      : '3 Possessions Each';
   const resultText = outcome.reason === 'concession'
     ? `${players[outcome.conceded_by_idx ?? 0]?.name ?? 'A player'} conceded. ${players[winnerIdx].name} wins.`
     : outcome.reason === 'shootout'
       ? `${players[winnerIdx].name} wins the FG shootout.`
-      : `${players[winnerIdx].name} finishes ahead after four possessions each.`;
+      : `${players[winnerIdx].name} finishes ahead after three possessions each.`;
 
   // One-shot sting on mount: victory fanfare + cheer if I won, defeat sigh if not.
   useEffect(() => {

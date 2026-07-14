@@ -155,7 +155,7 @@ export default function Tutorial() {
             pool, then on every down both sides secretly call a play
             (<em>run/pass/punt/fg</em>) plus a sub-call. Plays resolve with
             seeded skill rolls. Each team gets{' '}
-            <span className="chip">4 offensive possessions</span>. High score
+            <span className="chip">3 offensive possessions</span>. High score
             wins; a tie goes to a paired field-goal shootout.
           </p>
         </section>
@@ -585,7 +585,7 @@ export default function Tutorial() {
         <section className="panel-flash">
           <div className="panel-titlebar">
             <span>6 · Scoring &amp; Win Condition</span>
-            <span className="text-xs">4 possessions each</span>
+            <span className="text-xs">3 possessions each</span>
           </div>
           <ul className="text-sm space-y-1 pl-4 list-disc">
             <li>
@@ -602,19 +602,19 @@ export default function Tutorial() {
             </li>
             <li>
               <strong>Regulation:</strong> each team gets exactly{' '}
-              <span className="chip">4 completed offensive possessions</span>.
-              The higher score after both teams finish all four wins.
+              <span className="chip">3 completed offensive possessions</span>.
+              The higher score after both teams finish all three wins.
             </li>
           </ul>
 
           <h3 className="font-black mt-4 mb-1">Possessions &amp; the counter</h3>
           <p className="text-sm leading-snug">
             The possession counter shows how many completed offensive
-            possessions each team has used, from <strong>0/4</strong> through{' '}
-            <strong>4/4</strong>. A possession ends on a touchdown, safety,
+            possessions each team has used, from <strong>0/3</strong> through{' '}
+            <strong>3/3</strong>. A possession ends on a touchdown, safety,
             turnover, turnover on downs, punt, or <em>any</em> field-goal
             attempt (made or missed). Regulation does not finish until both
-            counters reach 4/4.
+            counters reach 3/3.
           </p>
 
           <h3 className="font-black mt-4 mb-1">Tied game: FG shootout</h3>

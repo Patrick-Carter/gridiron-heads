@@ -24,8 +24,8 @@ describe('ScorePanel', () => {
     );
 
     expect(screen.getByText('at own 25')).toBeTruthy();
-    expect(screen.getByTestId('possessions-0').textContent).toContain('1/4');
-    expect(screen.getByTestId('possessions-1').textContent).toContain('2/4');
+    expect(screen.getByTestId('possessions-0').textContent).toContain('1/3');
+    expect(screen.getByTestId('possessions-1').textContent).toContain('2/3');
 
     view.rerender(
       <ScorePanel

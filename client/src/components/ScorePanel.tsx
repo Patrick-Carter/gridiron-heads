@@ -1,5 +1,5 @@
 import VolumePanel from './VolumePanel.js';
-import { ballSpotAt } from '@gridiron/shared';
+import { ballSpotAt, REGULATION_POSSESSIONS } from '@gridiron/shared';
 import type { ShootoutState } from '@gridiron/shared';
 
 function downLabel(d: number): string {
@@ -82,7 +82,7 @@ export default function ScorePanel({
                 {scores[i].toFixed(1)}
               </span>
               <span className="chip !text-[9px] !py-0 !px-1 whitespace-nowrap" data-testid={`possessions-${i}`}>
-                POS {possessionsCompleted[i]}/4
+                POS {possessionsCompleted[i]}/{REGULATION_POSSESSIONS}
               </span>
               {i === 1 && hasBall && <span aria-label="has possession">🏈</span>}
             </button>

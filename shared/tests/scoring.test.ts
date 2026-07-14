@@ -10,18 +10,18 @@ describe('addPoints', () => {
 });
 
 describe('evaluateRegulation', () => {
-  it('does not end before both teams complete four possessions', () => {
-    expect(evaluateRegulation([10, 0], [4, 3])).toEqual({ status: 'ongoing' });
-    expect(evaluateRegulation([3, 0], [3, 3])).toEqual({ status: 'ongoing' });
+  it('does not end before both teams complete three possessions', () => {
+    expect(evaluateRegulation([10, 0], [3, 2])).toEqual({ status: 'ongoing' });
+    expect(evaluateRegulation([3, 0], [2, 2])).toEqual({ status: 'ongoing' });
   });
 
-  it('selects the higher score after four possessions each', () => {
-    expect(evaluateRegulation([1, 0.5], [4, 4])).toEqual({ status: 'winner', winner_idx: 0 });
-    expect(evaluateRegulation([0.5, 1], [4, 4])).toEqual({ status: 'winner', winner_idx: 1 });
+  it('selects the higher score after three possessions each', () => {
+    expect(evaluateRegulation([1, 0.5], [3, 3])).toEqual({ status: 'winner', winner_idx: 0 });
+    expect(evaluateRegulation([0.5, 1], [3, 3])).toEqual({ status: 'winner', winner_idx: 1 });
   });
 
   it('starts a shootout when regulation ends tied', () => {
-    expect(evaluateRegulation([2.5, 2.5], [4, 4])).toEqual({ status: 'shootout' });
+    expect(evaluateRegulation([2.5, 2.5], [3, 3])).toEqual({ status: 'shootout' });
   });
 });
 

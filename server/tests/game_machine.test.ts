@@ -674,27 +674,27 @@ describe('Play resolution', () => {
     expect(r.game!.possessions_completed).toEqual([0, 0]);
   });
 
-  it('counts a punt as one completed possession and waits at 4-3', () => {
+  it('counts a punt as one completed possession and waits at 3-2', () => {
     const r = setupReadyToSnapRoom();
     r.game!.possession_idx = 0;
-    r.game!.possessions_completed = [3, 3];
+    r.game!.possessions_completed = [2, 2];
     r.pending_schemes[r.players[0].id] = { parent: 'punt', sub: 'inside' };
     r.pending_schemes[r.players[1].id] = { parent: 'run', sub: 'inside' };
     resolveCurrentPlay(r, 1);
-    expect(r.game!.possessions_completed).toEqual([4, 3]);
+    expect(r.game!.possessions_completed).toEqual([3, 2]);
     expect(r.outcome).toBeNull();
     expect(r.game!.phase).toBe('between_plays');
   });
 
-  it('ends regulation only after both teams complete four possessions', () => {
+  it('ends regulation only after both teams complete three possessions', () => {
     const r = setupReadyToSnapRoom();
     r.game!.possession_idx = 1;
-    r.game!.possessions_completed = [4, 3];
+    r.game!.possessions_completed = [3, 2];
     r.game!.scores = [1, 0];
     r.pending_schemes[r.players[1].id] = { parent: 'punt', sub: 'inside' };
     r.pending_schemes[r.players[0].id] = { parent: 'run', sub: 'inside' };
     resolveCurrentPlay(r, 1);
-    expect(r.game!.possessions_completed).toEqual([4, 4]);
+    expect(r.game!.possessions_completed).toEqual([3, 3]);
     expect(r.outcome).toEqual({ winner_idx: 0, reason: 'regulation', conceded_by_idx: null });
     expect(r.game!.phase).toBe('ended');
   });
@@ -757,7 +757,7 @@ function setupReadyToSnapRoom(): RoomState {
 function enterShootout(): RoomState {
   const room = setupReadyToSnapRoom();
   room.game!.possession_idx = 1;
-  room.game!.possessions_completed = [4, 3];
+  room.game!.possessions_completed = [3, 2];
   room.game!.scores = [0, 0];
   room.pending_schemes[room.players[1].id] = { parent: 'punt', sub: 'inside' };
   room.pending_schemes[room.players[0].id] = { parent: 'run', sub: 'inside' };

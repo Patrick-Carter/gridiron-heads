@@ -363,3 +363,12 @@ log as historical context; the 0.5-point value for made field goals is retained.
 **Rationale:** A fixed, equal number of regulation possessions gives both teams a
 complete opportunity to score, while paired kicks resolve ties under equal distances
 and alternating order.
+
+## D034 — 2026-07-13 — Three-possession regulation (ACCEPTED)
+**Decision:** Each team receives exactly three completed offensive possessions in
+regulation instead of four. Regulation still ends only after both teams complete
+their third possession; the higher score wins and a tie enters the existing paired
+field-goal shootout.
+
+**Supersedes:** D033's four-possession regulation limit. All other possession-ending
+events and shootout rules from D033 remain unchanged.

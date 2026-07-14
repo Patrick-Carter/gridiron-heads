@@ -15,11 +15,16 @@ export type RegulationOutcome =
   | { status: 'shootout' }
   | { status: 'winner'; winner_idx: 0 | 1 };
 
+export const REGULATION_POSSESSIONS = 3;
+
 export function evaluateRegulation(
   scores: [number, number],
   possessions_completed: [number, number],
 ): RegulationOutcome {
-  if (possessions_completed[0] < 4 || possessions_completed[1] < 4) {
+  if (
+    possessions_completed[0] < REGULATION_POSSESSIONS
+    || possessions_completed[1] < REGULATION_POSSESSIONS
+  ) {
     return { status: 'ongoing' };
   }
   if (scores[0] === scores[1]) return { status: 'shootout' };

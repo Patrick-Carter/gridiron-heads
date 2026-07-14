@@ -9,7 +9,7 @@ A 2-player head-to-head browser football game. **Built and shipped — don't reb
 
 **Stack:** Node 22 + Express 4 + Socket.IO 4 + better-sqlite3 (server) · Vite 5 + React 18 + Tailwind 3 + Socket.IO client (client) · TypeScript 5 throughout · Vitest for tests. Monorepo via npm workspaces (`shared/`, `server/`, `client/`).
 
-**Game:** Alternating-turn draft (each player on their turn picks ANY unpicked group) → simultaneous scheme pick (both online, then reveal) → turn-based audibles (offense flips sub-type, defense responds only to audible/fake) → snap → resolve with seeded RNG → animated canvas + text recap → auto-advance. Each team gets exactly 4 completed offensive possessions; high score wins, and a tie enters a paired manual FG shootout.
+**Game:** Alternating-turn draft (each player on their turn picks ANY unpicked group) → simultaneous scheme pick (both online, then reveal) → turn-based audibles (offense flips sub-type, defense responds only to audible/fake) → snap → resolve with seeded RNG → animated canvas + text recap → auto-advance. Each team gets exactly 3 completed offensive possessions; high score wins, and a tie enters a paired manual FG shootout.
 
 ## How to run
 
@@ -123,8 +123,8 @@ HTTP `POST /api/sessions` and `/api/sessions/:id/join` write to SQLite. When the
 - `pick_order` is the authoritative list; `current_turn` is the index.
 
 ### 13. Regulation, shootout, and concession
-- Each team gets exactly **4 completed offensive possessions**. A possession ends on TD, safety, turnover, turnover on downs, punt, or any FG attempt (made or missed).
-- The higher score after both teams complete all 4 possessions wins.
+- Each team gets exactly **3 completed offensive possessions**. A possession ends on TD, safety, turnover, turnover on downs, punt, or any FG attempt (made or missed).
+- The higher score after both teams complete all 3 possessions wins.
 - A regulation tie enters a paired manual FG shootout. Both teams attempt the same distance each round: 25, 35, 45, 55, 65 yards, then 65 again for every later round.
 - One make and one miss decides the game. If both make or both miss, advance to the next round.
 - The team with the first regulation possession kicks first in round 1; kicking order alternates each round.

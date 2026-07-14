@@ -1,7 +1,7 @@
 # Gridiron Heads
 
 > 2-player head-to-head browser football. Draft asymmetric position groups, then play
-> simultaneous scheme picks with turn-based audibles. Four possessions each; high
+> simultaneous scheme picks with turn-based audibles. Three possessions each; high
 > score wins, with a paired field-goal shootout for ties.
 
 Built with React + TypeScript + Tailwind on the front, Node + Express + Socket.IO +
@@ -58,11 +58,11 @@ node --import tsx scripts/cleanup_sessions.ts
 **Turnover chance:** full match 25%, parent-only 5%, mismatch 0%.
 
 **Regulation and win condition:**
-- Each team gets exactly **4 completed offensive possessions**.
+- Each team gets exactly **3 completed offensive possessions**.
 - A possession ends on a TD, safety, turnover, turnover on downs, punt, or any FG
   attempt (made or missed).
-- The possession counter tracks each team's completed possessions from 0/4 to 4/4.
-- After both teams complete all four possessions, the higher score wins.
+- The possession counter tracks each team's completed possessions from 0/3 to 3/3.
+- After both teams complete all three possessions, the higher score wins.
 
 **Tied game — paired manual FG shootout:**
 - Both teams kick from the same distance each round: 25, 35, 45, 55, then 65 yards.
