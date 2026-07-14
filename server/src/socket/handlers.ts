@@ -21,6 +21,9 @@ import {
   resolveShootoutKick,
   nextActionPhase,
   endMatch,
+  playActiveSkill,
+  passActiveSkill,
+  respondActiveSkill,
 } from './game_machine.js';
 import { tickCpu, CPU_PLAYER_ID } from './cpu.js';
 import { TOTAL_PICKS } from '@gridiron/shared';
@@ -427,6 +430,80 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
       broadcast(io, sdata.session_id, room);
     });
 
+    socket.on('game:active_skill', (raw: unknown) => {
+      if (!sdata.session_id || !sdata.player_id) return;
+      const room = getRoom(sdata.session_id);
+      if (!room || !room.game) return;
+      if (sdata.player_id === CPU_PLAYER_ID) {
+        socket.emit('session:error', { error: 'cpu_id_reserved' });
+        return;
+      }
+      const group = raw && typeof raw === 'object'
+        ? (raw as { group?: unknown }).group
+        : null;
+      if (!['QB', 'O_LINE', 'OFF_SKILL', 'KICKER'].includes(group as string)) {
+        socket.emit('session:error', { error: 'invalid_active_skill' });
+        return;
+      }
+      const result = playActiveSkill(room, sdata.player_id, group as any);
+      if (!result.ok) {
+        socket.emit('session:error', { error: result.reason });
+        return;
+      }
+      touchRoom(room);
+      broadcast(io, sdata.session_id, room);
+    });
+
+    socket.on('game:def_active_skill', (raw: unknown) => {
+      if (!sdata.session_id || !sdata.player_id) return;
+      const room = getRoom(sdata.session_id);
+      if (!room || !room.game) return;
+      if (sdata.player_id === CPU_PLAYER_ID) {
+        socket.emit('session:error', { error: 'cpu_id_reserved' });
+        return;
+      }
+      const group = raw && typeof raw === 'object'
+        ? (raw as { group?: unknown }).group
+        : null;
+      if (group !== 'D_LINE' && group !== 'DEF_SKILL') {
+        socket.emit('session:error', { error: 'invalid_active_skill' });
+        return;
+      }
+      const result = respondActiveSkill(room, sdata.player_id, group);
+      if (!result.ok) {
+        socket.emit('session:error', { error: result.reason });
+        return;
+      }
+      touchRoom(room);
+      broadcast(io, sdata.session_id, room);
+    });
+
+    socket.on('game:active_skill_pass', () => {
+      if (!sdata.session_id || !sdata.player_id) return;
+      const room = getRoom(sdata.session_id);
+      if (!room || !room.game) return;
+      const result = passActiveSkill(room, sdata.player_id);
+      if (!result.ok) {
+        socket.emit('session:error', { error: result.reason });
+        return;
+      }
+      touchRoom(room);
+      broadcast(io, sdata.session_id, room);
+    });
+
+    socket.on('game:def_active_pass', () => {
+      if (!sdata.session_id || !sdata.player_id) return;
+      const room = getRoom(sdata.session_id);
+      if (!room || !room.game) return;
+      const result = respondActiveSkill(room, sdata.player_id, null);
+      if (!result.ok) {
+        socket.emit('session:error', { error: result.reason });
+        return;
+      }
+      touchRoom(room);
+      broadcast(io, sdata.session_id, room);
+    });
+
     socket.on('game:snap', () => {
       if (!sdata.session_id) return;
       const room = getRoom(sdata.session_id);
@@ -436,7 +513,7 @@ export function registerSocketHandlers(io: IOServer, db: Database): void {
         return;
       }
       const game = room.game;
-      if (game.phase !== 'ready_to_snap') return;
+      if (game.phase !== 'card_chain_complete') return;
       if (!sdata.player_id) return;
       const player_idx = room.players.findIndex((player) => player.id === sdata.player_id);
       if (player_idx !== game.possession_idx) {

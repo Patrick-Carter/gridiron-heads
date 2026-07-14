@@ -10,11 +10,29 @@ export interface Play {
 
 export type PositionGroup = 'QB' | 'D_LINE' | 'O_LINE' | 'OFF_SKILL' | 'DEF_SKILL' | 'KICKER';
 
+export type ActiveSkillId =
+  | 'field_general' | 'protect_football' | 'escape_artist' | 'clutch_command' | 'gunslinger' | 'coverage_decoder'
+  | 'pancake_block' | 'max_protect' | 'road_graders' | 'clean_pocket' | 'pulling_guards' | 'misdirection'
+  | 'route_technician' | 'cutback_artist' | 'sure_hands' | 'breakaway_speed' | 'chain_mover' | 'matchup_nightmare'
+  | 'pin_ears_back' | 'crash_a_gap' | 'set_edge' | 'collapse_pocket' | 'strip_rush' | 'line_stunt'
+  | 'sure_tackling' | 'ball_hawk' | 'press_coverage' | 'two_high_shell' | 'run_fits' | 'film_study'
+  | 'big_leg' | 'ice_water' | 'perfect_hold' | 'friendly_upright' | 'coffin_corner' | 'quick_punt';
+
+export interface ActiveSkillDefinition {
+  id: ActiveSkillId;
+  group: PositionGroup;
+  name: string;
+  description: string;
+  role: 'offense' | 'defense' | 'special';
+}
+
 export interface PositionOption {
   id: string;
   group: PositionGroup;
   skill: number; // 50..100 for skill groups
   name: string;
+  /** Generated drafts always include one. Optional for pre-card fixtures/data. */
+  active_skill?: ActiveSkillId;
 }
 
 export type QBStat =
@@ -39,6 +57,7 @@ export interface QBOption {
   group: 'QB';
   name: string;
   modifier: QBModifier;
+  active_skill?: ActiveSkillId;
 }
 
 export interface TeamState {
@@ -71,6 +90,8 @@ export type GamePhase =
   | 'pre_play'
   | 'awaiting_schemes'
   | 'awaiting_def_response'
+  | 'awaiting_card_response'
+  | 'card_chain_complete'
   | 'ready_to_snap'
   | 'play_anim'
   | 'between_plays'
@@ -120,6 +141,8 @@ export interface GameState {
   teams: [TeamState, TeamState];
   audibles_used: [number, number];
   fake_audibles_used: [number, number];
+  /** Active skill IDs spent by each team. Unlike audibles, these never reset. */
+  active_skills_used: [ActiveSkillId[], ActiveSkillId[]];
   history: PlayResult[];
   last_play_seed: number | null;
   shootout: ShootoutState | null;
@@ -150,6 +173,9 @@ export interface PlayResult {
   off_audible: Play | null;
   def_audible: Play | null;
   off_fake_audible: boolean;
+  off_active_skill?: ActiveSkillId | null;
+  def_active_skill?: ActiveSkillId | null;
+  suppressed_active_skill?: ActiveSkillId | null;
   parent_match: boolean;
   sub_match: boolean;
   turnover: boolean;

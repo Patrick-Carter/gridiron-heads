@@ -10,6 +10,9 @@ import {
   CPU_PLAYER_ID,
   tickCpu,
   cpuShootoutKick,
+  activeDraftValue,
+  cpuMaybePlayActive,
+  cpuRespondActive,
 } from '../src/socket/cpu.js';
 import {
   newRoom,
@@ -87,6 +90,7 @@ function makeCpuGameRoom(draft_seed = 1, down: 1 | 2 | 3 | 4 = 1, yardline = 25)
     teams,
     audibles_used: [0, 0],
     fake_audibles_used: [0, 0],
+    active_skills_used: [[], []],
     history: [],
     last_play_seed: null,
     shootout: null,
@@ -145,6 +149,30 @@ describe('cpuDraftPick', () => {
     expect(room.draft!.picks[CPU_PLAYER_ID].d_line).toBeNull();
   });
 
+  it('includes active-card value when comparing close draft options', () => {
+    const room = makeCpuRoomWithDraft();
+    room.draft!.pool.QB = [
+      {
+        id: 'safe-qb',
+        group: 'QB',
+        name: 'Safe QB',
+        modifier: { stat: 'off_skill_pct', value: 12, scope: 'all_plays' },
+        active_skill: 'protect_football',
+      },
+      {
+        id: 'plain-qb',
+        group: 'QB',
+        name: 'Plain QB',
+        modifier: { stat: 'off_skill_pct', value: 20, scope: 'all_plays' },
+      },
+    ];
+
+    cpuDraftPick(room);
+
+    expect(room.draft!.picks[CPU_PLAYER_ID].qb?.id).toBe('safe-qb');
+    expect(activeDraftValue('protect_football')).toBeGreaterThan(activeDraftValue(undefined));
+  });
+
   it('starts the game when the CPU owns the final draft pick', () => {
     const room = makeCpuRoomWithDraft();
     room.first_possession_id = 'host-id';
@@ -170,6 +198,80 @@ describe('cpuDraftPick', () => {
     expect(room.draft!.current_turn).toBe(12);
     expect(room.game).not.toBeNull();
     expect(room.game!.phase).toBe('awaiting_schemes');
+  });
+});
+
+describe('CPU active-card decisions', () => {
+  it('plays an unused card that fits the CPU offense call', () => {
+    const room = makeCpuGameRoom();
+    const cpuIdx = room.players.findIndex((p) => p.id === CPU_PLAYER_ID) as 0 | 1;
+    room.game!.phase = 'ready_to_snap';
+    room.game!.possession_idx = cpuIdx;
+    room.game!.possessions_completed[cpuIdx] = 2;
+    room.pending_schemes[CPU_PLAYER_ID] = { parent: 'pass', sub: 'deep' };
+    room.game!.teams[cpuIdx].qb!.active_skill = undefined;
+    room.game!.teams[cpuIdx].o_line!.active_skill = undefined;
+    room.game!.teams[cpuIdx].off_skill!.active_skill = 'gunslinger';
+
+    expect(cpuMaybePlayActive(room, cpuIdx)).toBe(true);
+    expect(room.active_card_chain?.offense).toBe('gunslinger');
+    expect(room.game!.active_skills_used[cpuIdx]).toContain('gunslinger');
+    expect(room.game!.phase).toBe('awaiting_card_response');
+  });
+
+  it('does not waste a situational card on the wrong play type', () => {
+    const room = makeCpuGameRoom();
+    const cpuIdx = room.players.findIndex((p) => p.id === CPU_PLAYER_ID) as 0 | 1;
+    room.game!.phase = 'ready_to_snap';
+    room.game!.possession_idx = cpuIdx;
+    room.game!.possessions_completed[cpuIdx] = 2;
+    room.pending_schemes[CPU_PLAYER_ID] = { parent: 'run', sub: 'inside' };
+    room.game!.teams[cpuIdx].qb!.active_skill = 'gunslinger';
+    room.game!.teams[cpuIdx].o_line!.active_skill = undefined;
+    room.game!.teams[cpuIdx].off_skill!.active_skill = undefined;
+
+    expect(cpuMaybePlayActive(room, cpuIdx)).toBe(false);
+    expect(room.active_card_chain).toBeNull();
+    expect(room.game!.active_skills_used[cpuIdx]).toEqual([]);
+  });
+
+  it('responds with a fitting defensive card when the decision roll succeeds', () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      const room = makeCpuGameRoom();
+      const cpuIdx = room.players.findIndex((p) => p.id === CPU_PLAYER_ID) as 0 | 1;
+      room.game!.possession_idx = cpuIdx === 0 ? 1 : 0;
+      room.game!.phase = 'awaiting_card_response';
+      room.active_card_chain = { offense: 'breakaway_speed', defense: null, suppressed: null };
+      room.pending_schemes[CPU_PLAYER_ID] = { parent: 'run', sub: 'inside' };
+      room.pending_schemes[room.players[room.game!.possession_idx].id] = { parent: 'run', sub: 'inside' };
+      room.game!.teams[cpuIdx].d_line!.active_skill = undefined;
+      room.game!.teams[cpuIdx].def_skill!.active_skill = 'run_fits';
+
+      expect(cpuRespondActive(room, cpuIdx)).toBe(true);
+      expect(room.active_card_chain.defense).toBe('run_fits');
+      expect(room.game!.active_skills_used[cpuIdx]).toContain('run_fits');
+      expect(room.game!.phase).toBe('card_chain_complete');
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it('passes the response instead of spending a card that does not fit', () => {
+    const room = makeCpuGameRoom();
+    const cpuIdx = room.players.findIndex((p) => p.id === CPU_PLAYER_ID) as 0 | 1;
+    room.game!.possession_idx = cpuIdx === 0 ? 1 : 0;
+    room.game!.phase = 'awaiting_card_response';
+    room.active_card_chain = { offense: 'road_graders', defense: null, suppressed: null };
+    room.pending_schemes[CPU_PLAYER_ID] = { parent: 'run', sub: 'inside' };
+    room.pending_schemes[room.players[room.game!.possession_idx].id] = { parent: 'run', sub: 'inside' };
+    room.game!.teams[cpuIdx].d_line!.active_skill = undefined;
+    room.game!.teams[cpuIdx].def_skill!.active_skill = 'press_coverage';
+
+    expect(cpuRespondActive(room, cpuIdx)).toBe(true);
+    expect(room.active_card_chain.defense).toBeNull();
+    expect(room.game!.active_skills_used[cpuIdx]).toEqual([]);
+    expect(room.game!.phase).toBe('card_chain_complete');
   });
 });
 

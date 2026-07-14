@@ -72,7 +72,13 @@ function startServer() {
 
     const proc = spawn('node', ['server/dist/index.js'], {
       cwd: ROOT,
-      env: { ...process.env, PORT: String(PORT), NODE_ENV: 'production' },
+      env: {
+        ...process.env,
+        PORT: String(PORT),
+        NODE_ENV: 'production',
+        DB_PATH: dbPath,
+        ALLOWED_ORIGINS: BASE,
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let errBuf = '';
@@ -159,7 +165,7 @@ try {
   // -- Home
   await pageA.goto(`${BASE}/`);
   await expectVisible(pageA, '.flash-banner', 'home flash banner');
-  await expectText(pageA, 'GRIDIRON HEADS', 'home title');
+  await expectText(pageA, 'BROWSER BOWL', 'home title');
   await expectText(pageA, 'Create Game', 'home create CTA', /* partial */ true);
   await pageA.screenshot({ path: path.join(SHOTS, '01-home.png'), fullPage: true });
 
@@ -168,6 +174,7 @@ try {
   await pageA.waitForURL(/\/create$/);
   await expectText(pageA, 'CREATE GAME', 'create title');
   await pageA.fill('input.input-flash', 'FlashSmoke1');
+  await pageA.click('[data-testid="mode-friend"]');
   await pageA.click('button[type="submit"]');
   await pageA.waitForURL(/\/session\/[A-Za-z0-9_-]+$/, { timeout: 10000 });
   const sessionUrl = pageA.url();
@@ -220,7 +227,7 @@ try {
   // Also assert at least ONE two-word name from the pool is visible.
   // A generous regex: any capitalized-first word + capitalized-second word
   const twoWordNames = draftHtml.match(/\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/g) || [];
-  const distinctNames = [...new Set(twoWordNames)].filter(n => !['Game Showdown', 'GRIDIRON HEADS'].includes(n));
+  const distinctNames = [...new Set(twoWordNames)].filter(n => !['Game Showdown', 'BROWSER BOWL'].includes(n));
   if (distinctNames.length < 3) {
     await pageA.screenshot({ path: path.join(SHOTS, '_fail.png'), fullPage: true });
     fail(`only ${distinctNames.length} two-word names found — expected ≥3 fun pool entries. Got: ${distinctNames.slice(0, 5).join(', ')}`);
@@ -259,10 +266,10 @@ try {
     // Settle: server processes, broadcasts snapshot, react re-renders.
     await target.waitForTimeout(450);
   }
-  // Wait for the game phase to begin (Pick Your Play panel shows up).
+  // Wait for the game phase to begin (the scheme Lock In panel shows up).
   await pageA.waitForFunction(
     () => document.body.innerText.includes('Scoreboard') &&
-          document.body.innerText.includes('Pick Your Play'),
+          document.body.innerText.includes('Lock In'),
     null, { timeout: 25000 },
   ).catch(() => {});
   ok('draft walked; game entered');
@@ -297,21 +304,33 @@ try {
   // Wait for SchemePicker to be present, then pick RUN/INSIDE.
   // Scope to the SchemePicker panel so we don't accidentally click a
   // draft "RUN" leftover or something else on the page.
-  await pageA.waitForSelector('.panel-flash:has-text("Pick Your Play")', { timeout: 8000 });
-  await pageA.locator('.panel-flash:has-text("Pick Your Play") button:has-text("RUN")').click();
-  await pageA.locator('.panel-flash:has-text("Pick Your Play") button:has-text("INSIDE")').click();
-  await pageA.locator('.panel-flash:has-text("Pick Your Play") button:has-text("Lock In")').click();
+  await pageA.waitForSelector('.panel-flash:has(button:has-text("Lock In"))', { timeout: 8000 });
+  await pageA.locator('.panel-flash:has(button:has-text("Lock In")) button:has-text("RUN")').click();
+  await pageA.locator('.panel-flash:has(button:has-text("Lock In")) button:has-text("INSIDE")').click();
+  await pageA.locator('.panel-flash:has(button:has-text("Lock In")) button:has-text("Lock In")').click();
   await pageA.screenshot({ path: path.join(SHOTS, '03-locked-in.png'), fullPage: true });
   await expectText(pageA, 'YOU CALLED', 'locked-in panel');
 
   // Have guest pick pass/deep
-  await pageB.waitForSelector('.panel-flash:has-text("Pick Your Play")', { timeout: 5000 });
-  await pageB.locator('.panel-flash:has-text("Pick Your Play") button:has-text("PASS")').click();
-  await pageB.locator('.panel-flash:has-text("Pick Your Play") button:has-text("DEEP")').click();
-  await pageB.locator('.panel-flash:has-text("Pick Your Play") button:has-text("Lock In")').click();
+  await pageB.waitForSelector('.panel-flash:has(button:has-text("Lock In"))', { timeout: 5000 });
+  await pageB.locator('.panel-flash:has(button:has-text("Lock In")) button:has-text("PASS")').click();
+  await pageB.locator('.panel-flash:has(button:has-text("Lock In")) button:has-text("DEEP")').click();
+  await pageB.locator('.panel-flash:has(button:has-text("Lock In")) button:has-text("Lock In")').click();
 
-  // -- Drive one full play. We don't know in advance which player is
-  // offense (random coin flip), so try both pages for the SNAP button.
+  // -- Drive one full play. Offense must pass card priority, then defense
+  // gets its own card/pass decision even though offense played no card.
+  const priorityPromiseA = pageA.waitForSelector('button:has-text("Pass Priority to Defense")', { timeout: 8000 }).then(() => pageA).catch(() => null);
+  const priorityPromiseB = pageB.waitForSelector('button:has-text("Pass Priority to Defense")', { timeout: 8000 }).then(() => pageB).catch(() => null);
+  const priorityPage = await Promise.race([priorityPromiseA, priorityPromiseB]);
+  await Promise.allSettled([priorityPromiseA, priorityPromiseB]);
+  if (!priorityPage) fail('offense card priority was not shown');
+  const priorityDefense = priorityPage === pageA ? pageB : pageA;
+  await priorityPage.locator('button:has-text("Pass Priority to Defense")').click();
+  await priorityDefense.waitForSelector('button:has-text("Pass · Keep Cards")', { timeout: 8000 });
+  await priorityDefense.locator('button:has-text("Pass · Keep Cards")').click();
+
+  // We don't know in advance which player is offense (random coin flip), so
+  // locate the SNAP button after both players pass priority.
   const snapPromiseA = pageA.waitForSelector('button:has-text("SNAP")', { timeout: 8000 }).then(() => pageA).catch(() => null);
   const snapPromiseB = pageB.waitForSelector('button:has-text("SNAP")', { timeout: 8000 }).then(() => pageB).catch(() => null);
   const snapPage = await Promise.race([snapPromiseA, snapPromiseB]);
@@ -322,10 +341,10 @@ try {
     await pageB.screenshot({ path: path.join(SHOTS, '_fail-1.png'), fullPage: true });
     fail('SNAP button not visible on either player after both locked in');
   }
-  // Whichever page won the race is the offense; that's the SNAP-imminent host.
+  // Whichever page won the race is offense; its completed priority chain is visible.
   const offense = snapPage;
   const defense = snapPage === pageA ? pageB : pageA;
-  await expectText(offense, 'Snap Imminent', 'snap-imminent panel (D029)');
+  await expectText(offense, 'Quick Counter', 'completed card-priority panel');
   await offense.screenshot({ path: path.join(SHOTS, '04-snap-imminent.png'), fullPage: true });
 
   // Snap and wait for the play to resolve. We don't watch the "Your Play"
@@ -346,10 +365,10 @@ try {
   // the next "Pick Your Play" panel having at least one history entry).
   await offense.waitForFunction(
     () => {
-      const t = document.body.innerText;
-      return t.includes('Your Play')
-        || t.includes('Skip Wait')
-        || t.includes('Recent Plays') && t.includes('Gain')
+      const t = document.body.innerText.toLowerCase();
+      return t.includes('your play')
+        || t.includes('skip wait')
+        || t.includes('history') && (t.includes('gain') || t.includes('loss') || t.includes('no gain'))
         || t.includes('yds');
     },
     null, { timeout: 10000 },

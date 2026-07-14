@@ -78,6 +78,7 @@ export function newGameState(
     teams,
     audibles_used: [0, 0],
     fake_audibles_used: [0, 0],
+    active_skills_used: [[], []],
     history: [],
     last_play_seed: null,
     shootout: null,

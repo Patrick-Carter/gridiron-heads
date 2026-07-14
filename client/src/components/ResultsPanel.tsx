@@ -20,6 +20,7 @@
 // results+rolls row on mobile).
 
 import type { PlayResult } from '@gridiron/shared';
+import { ActiveSkillChip } from './ActiveSkillCard.js';
 
 interface ResultsPanelProps {
   playResult: PlayResult | null;
@@ -225,6 +226,24 @@ function ResultCard({ p, visible }: { p: PlayResult; visible: boolean }) {
       <div className="text-xs font-bold text-ink/80 mt-0.5">
         {p.text_recap}
       </div>
+      {(p.off_active_skill || p.def_active_skill) && (
+        <div className="flex items-center justify-center gap-1 mt-1.5 flex-wrap" data-testid="result-active-skills">
+          {p.off_active_skill && (
+            <ActiveSkillChip
+              skillId={p.off_active_skill}
+              side="OFF"
+              suppressed={p.suppressed_active_skill === p.off_active_skill}
+            />
+          )}
+          {p.def_active_skill && (
+            <ActiveSkillChip
+              skillId={p.def_active_skill}
+              side="DEF"
+              suppressed={p.suppressed_active_skill === p.def_active_skill}
+            />
+          )}
+        </div>
+      )}
       {p.scoring_event && (
         <div className="chip !bg-lime mt-1 text-xs">
           {p.scoring_event.toUpperCase()}+{(p.scoring_event === 'td' ? 1 : 0.5).toFixed(1)}

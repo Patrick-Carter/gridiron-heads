@@ -59,7 +59,13 @@ function startServer() {
     }
     const proc = spawn('node', ['server/dist/index.js'], {
       cwd: ROOT,
-      env: { ...process.env, PORT: String(PORT), NODE_ENV: 'production' },
+      env: {
+        ...process.env,
+        PORT: String(PORT),
+        NODE_ENV: 'production',
+        DB_PATH: dbPath,
+        ALLOWED_ORIGINS: BASE,
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let errBuf = '';
@@ -139,7 +145,7 @@ try {
   // -- Home
   await page.goto(`${BASE}/`);
   await expectVisible(page, '.flash-banner', 'home flash banner');
-  await expectText(page, 'GRIDIRON HEADS', 'home title');
+  await expectText(page, 'BROWSER BOWL', 'home title');
   await expectText(page, 'CPU Bot', 'home CPU mention (case-insensitive)', /* partial */ true);
   await page.screenshot({ path: path.join(SHOTS, 'cpu-01-home.png'), fullPage: true });
 
@@ -187,10 +193,12 @@ try {
     await pickBtn.click();
     await page.waitForTimeout(450);
   }
-  // Wait for the game phase to begin (Pick Your Play panel shows up).
+  // Wait for the game phase to begin (the scheme Lock In panel shows up).
   await page.waitForFunction(
-    () => document.body.innerText.includes('Scoreboard')
-      && (document.body.innerText.includes('Pick Your Play') || document.body.innerText.includes('Snap')),
+    () => {
+      const text = document.body.innerText.toLowerCase();
+      return text.includes('scoreboard') && (text.includes('lock in') || text.includes('snap'));
+    },
     null, { timeout: 25000 },
   ).catch(() => {});
   ok('draft walked; game entered (CPU drafted itself)');
@@ -204,16 +212,36 @@ try {
     // Wait until we're actionable (awaiting_schemes or ready_to_snap).
     let ready = false;
     for (let i = 0; i < 60; i++) {
-      const t = await page.evaluate(() => document.body.innerText);
-      if (t.includes('Game Over') || t.includes('Final')) {
+      const t = (await page.evaluate(() => document.body.innerText)).toLowerCase();
+      if (t.includes('game over') || t.includes('final')) {
         ready = 'ended';
         break;
       }
-      if (t.includes('Pick Your Play') || t.includes('SNAP')) {
+      if (t.includes('lock in') || t.includes('snap') || t.includes('pass priority to defense')
+        || t.includes('pass · keep cards')
+        || t.includes('offense audibled')) {
         ready = 'play';
         break;
       }
       await page.waitForTimeout(150);
+    }
+    const offensePriorityPass = page.locator('button:has-text("Pass Priority to Defense")');
+    if (await offensePriorityPass.count()) {
+      await offensePriorityPass.first().click();
+      await page.waitForTimeout(300);
+      continue;
+    }
+    const cardPass = page.locator('button:has-text("Pass · Keep Cards")');
+    if (await cardPass.count()) {
+      await cardPass.first().click();
+      await page.waitForTimeout(5000);
+      continue;
+    }
+    const audibleStay = page.locator('button:has-text("Stay")');
+    if (await audibleStay.count()) {
+      await audibleStay.first().click();
+      await page.waitForTimeout(300);
+      continue;
     }
     if (ready === 'ended') {
       ok('game ended');
@@ -223,31 +251,24 @@ try {
       console.warn(`[cpu-smoke] WARN: no actionable state after waiting, turn ${turn}`);
       break;
     }
-    // If "Pick Your Play" panel is visible, host picks a scheme.
-    const pickPlayVisible = await page.locator('.panel-flash:has-text("Pick Your Play")').count();
+    // If the scheme panel is visible, host picks a call.
+    const pickPlayVisible = await page.locator('.panel-flash:has(button:has-text("Lock In"))').count();
     if (pickPlayVisible > 0) {
       // Pick RUN/INSIDE as offense, PASS/DEEP as defense. CPU will pick its
       // own scheme shortly via tickCpu.
-      const t = await page.evaluate(() => document.body.innerText);
-      const isOffense = t.includes('OFFENSE');
-      await page.locator('.panel-flash:has-text("Pick Your Play") button:has-text("RUN")').click().catch(() => {});
+      await page.locator('.panel-flash:has(button:has-text("Lock In")) button:has-text("RUN")').click().catch(() => {});
       await page.waitForTimeout(50);
-      await page.locator('.panel-flash:has-text("Pick Your Play") button:has-text("INSIDE")').click().catch(() => {});
+      await page.locator('.panel-flash:has(button:has-text("Lock In")) button:has-text("INSIDE")').click().catch(() => {});
       await page.waitForTimeout(50);
-      if (!isOffense) {
-        // We're defense — switch to pass
-        await page.locator('.panel-flash:has-text("Pick Your Play") button:has-text("PASS")').click().catch(() => {});
-        await page.locator('.panel-flash:has-text("Pick Your Play") button:has-text("DEEP")').click().catch(() => {});
-      }
-      await page.locator('.panel-flash:has-text("Pick Your Play") button:has-text("Lock In")').click().catch(() => {});
+      await page.locator('.panel-flash:has(button:has-text("Lock In")) button:has-text("Lock In")').click().catch(() => {});
       await page.waitForTimeout(300);
       continue;
     }
     // Otherwise it's ready_to_snap — if host is offense, snap. If defense,
     // CPU will snap itself; just wait.
-    const t = await page.evaluate(() => document.body.innerText);
-    if (t.includes('OFFENSE') && t.includes('SNAP')) {
-      await page.locator('button:has-text("SNAP")').first().click();
+    const snap = page.locator('button:has-text("SNAP")');
+    if (await snap.count()) {
+      await snap.first().click();
     }
     await page.waitForTimeout(5000); // wait for auto-advance
   }

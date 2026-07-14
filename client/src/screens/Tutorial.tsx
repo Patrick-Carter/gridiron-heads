@@ -228,6 +228,12 @@ export default function Tutorial() {
               offense audible or fake. They cannot initiate.
             </li>
             <li>
+              <strong>Quick Counter:</strong> every drafted group has one active
+              skill marked <em>1 GAME</em>. After audibles, offense plays one
+              eligible card or passes priority. Defense sees that choice, then
+              may play a D-LINE / DEF_SKILL card or pass even if offense passed.
+            </li>
+            <li>
               <strong>SNAP.</strong> The seed RNG rolls skill contests and
               yardage.
             </li>
@@ -635,6 +641,10 @@ export default function Tutorial() {
             <li>
               Drafted kicker skill and QB field-goal buffs still apply. There
               is no defensive call or block attempt.
+            </li>
+            <li>
+              FG-applicable kicker Quick Counters can be spent before a
+              shootout kick if they are still READY.
             </li>
             <li>
               Every shootout make adds <span className="chip">+0.5</span> to

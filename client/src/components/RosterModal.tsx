@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
-import type { TeamState, PositionGroup } from '@gridiron/shared';
+import type { ActiveSkillId, TeamState, PositionGroup } from '@gridiron/shared';
 import { modifierDescription } from '@gridiron/shared';
+import { ActiveSkillDetails } from './ActiveSkillCard.js';
+import type { ActiveCardChain } from './ActiveSkillCard.js';
 
 // Position group order + human-readable labels (matches Draft screen).
 const GROUPS: Array<{ key: PositionGroup; label: string; emoji: string }> = [
-  { key: 'QB',         label: 'Quartback', emoji: '🏈' },
+  { key: 'QB',         label: 'Quarterback', emoji: '🏈' },
   { key: 'D_LINE',     label: 'D-Line',    emoji: '🛡️' },
   { key: 'O_LINE',     label: 'O-Line',    emoji: '🏗️' },
   { key: 'OFF_SKILL',  label: 'Off Skill', emoji: '⚡' },
@@ -29,6 +31,8 @@ export default function RosterModal({
   focusIdx,
   onClose,
   onSwitch,
+  activeSkillsUsed = [[], []],
+  activeCardChain = null,
 }: {
   open: boolean;
   team: TeamState | null;
@@ -38,6 +42,8 @@ export default function RosterModal({
   focusIdx: 0 | 1;
   onClose: () => void;
   onSwitch: (idx: 0 | 1) => void;
+  activeSkillsUsed?: [ActiveSkillId[], ActiveSkillId[]];
+  activeCardChain?: ActiveCardChain | null;
 }) {
   // Escape to close
   useEffect(() => {
@@ -136,6 +142,20 @@ export default function RosterModal({
                       {opt.modifier && (
                         <div className="text-xs text-maroon mt-0.5">
                           ✦ {modifierDescription(opt.modifier)}
+                        </div>
+                      )}
+                      {opt.active_skill && (
+                        <div className="mt-1.5">
+                          <ActiveSkillDetails
+                            skillId={opt.active_skill}
+                            status={activeCardChain?.suppressed === opt.active_skill
+                              ? 'suppressed'
+                              : activeCardChain?.offense === opt.active_skill
+                                || activeCardChain?.defense === opt.active_skill
+                                ? 'played'
+                                : activeSkillsUsed[focusIdx]?.includes(opt.active_skill) ? 'used' : 'ready'}
+                            compact
+                          />
                         </div>
                       )}
                     </div>

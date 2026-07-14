@@ -53,6 +53,24 @@ describe('ShootoutPanel', () => {
     expect(screen.queryByRole('button', { name: /kick/i })).toBeNull();
     expect(screen.getByText(/waiting for alpha/i)).toBeTruthy();
   });
+
+  it('offers an unused FG kicker card to the current kicker', () => {
+    const onActiveSkill = vi.fn();
+    render(
+      <ShootoutPanel
+        shootout={shootout}
+        players={[{ name: 'Alpha' }, { name: 'Beta' }]}
+        myIdx={0}
+        ready
+        onKick={() => {}}
+        kickerActiveSkill="ice_water"
+        onActiveSkill={onActiveSkill}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /play kicker active skill/i }));
+    expect(onActiveSkill).toHaveBeenCalledOnce();
+    expect(screen.getByText('Ice Water')).toBeTruthy();
+  });
 });
 
 describe('ConcedeControl', () => {

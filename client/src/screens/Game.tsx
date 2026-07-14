@@ -11,6 +11,7 @@ import HistoryPanel from '../components/HistoryPanel.js';
 import TdConfetti from '../components/TdConfetti.js';
 import ConcedeControl from '../components/ConcedeControl.js';
 import ShootoutPanel from '../components/ShootoutPanel.js';
+import ActiveSkillControls from '../components/ActiveSkillControls.js';
 import {
   initAudio,
   playSnap,
@@ -41,6 +42,7 @@ import {
 } from '../audio/crowd.js';
 import type { PlayEffect } from '../components/playAnimation.js';
 import type { SessionSnapshot } from '../hooks/useSession.js';
+import { activeSkillForTeamGroup } from '@gridiron/shared';
 import type { Play, PlayResult, ShootoutState } from '@gridiron/shared';
 
 export default function Game({
@@ -206,6 +208,9 @@ export default function Game({
   const qbModifier = game.teams[myIdx].qb?.modifier;
   const realAudibleLimit = 1 + (qbModifier?.stat === 'real_audible_refresh' ? qbModifier.value : 0);
   const fakeAudibleLimit = 1 + (qbModifier?.stat === 'fake_audible_refresh' ? qbModifier.value : 0);
+  const myActiveSkillsUsed = game.active_skills_used?.[myIdx] ?? [];
+  const activeCardChain = state.active_card_chain ?? null;
+  const kickerActiveSkill = activeSkillForTeamGroup(game.teams[myIdx], 'KICKER') ?? null;
 
   // Roster overlay — null = closed; 0 = host's team; 1 = guest's team.
   const [rosterIdx, setRosterIdx] = useState<0 | 1 | null>(null);
@@ -273,6 +278,10 @@ export default function Game({
               myIdx={myIdx}
               ready={game.phase === 'shootout_ready'}
               onKick={() => { initAudio(); send(EVENTS.SHOOTOUT_KICK); }}
+              kickerActiveSkill={kickerActiveSkill}
+              kickerActiveSkillUsed={!!kickerActiveSkill && myActiveSkillsUsed.includes(kickerActiveSkill)}
+              activeCardChain={activeCardChain}
+              onActiveSkill={() => send(EVENTS.ACTIVE_SKILL, { group: 'KICKER' })}
             />
           )}
           {game.phase === 'awaiting_schemes' && !hasPendingMyScheme && (
@@ -309,12 +318,6 @@ export default function Game({
                   </div>
                 </div>
               )}
-              <button
-                onClick={() => { initAudio(); send(EVENTS.SNAP); }}
-                className="btn-flash btn-xtra btn-go w-full"
-              >
-                ⚡ SNAP! ⚡
-              </button>
               <AudiblePanel
                 role="offense"
                 phase={game.phase}
@@ -326,12 +329,24 @@ export default function Game({
                 onAudible={(sub) => send(EVENTS.AUDIBLE, { target_sub: sub })}
                 onFakeAudible={() => send(EVENTS.FAKE_AUDIBLE)}
               />
+              <ActiveSkillControls
+                phase={game.phase}
+                isOffense
+                team={game.teams[myIdx]}
+                used={myActiveSkillsUsed}
+                currentPlay={pendingMyScheme}
+                chain={activeCardChain}
+                onOffenseSkill={(group) => send(EVENTS.ACTIVE_SKILL, { group })}
+                onOffensePass={() => send(EVENTS.ACTIVE_SKILL_PASS)}
+                onDefenseSkill={(group) => send(EVENTS.DEF_ACTIVE_SKILL, { group })}
+                onDefensePass={() => send(EVENTS.DEF_ACTIVE_PASS)}
+              />
             </div>
           )}
 
           {game.phase === 'ready_to_snap' && !isOffense && (
             <div className="panel-flash text-center space-y-2 animate-pulse">
-              <div className="panel-titlebar !mt-0"><span>Defense read set</span><span className="text-xs">Snap!</span></div>
+              <div className="panel-titlebar !mt-0"><span>Defense read set</span><span className="text-xs">Priority</span></div>
               <div className="flex items-center justify-center gap-2 text-sm flex-wrap">
                 <span className="chip !bg-maroon !text-cream">
                   DEF (you): {pendingMyScheme ? `${pendingMyScheme.parent.toUpperCase()} ${pendingMyScheme.sub.toUpperCase()}` : '—'}
@@ -341,7 +356,37 @@ export default function Game({
                   OFF: {opponentScheme ? `${opponentScheme.parent.toUpperCase()} ${opponentScheme.sub.toUpperCase()}` : '—'}
                 </span>
               </div>
-              <div className="text-base">🏈 Offense snapping…</div>
+              <div className="text-base">Offense is choosing a card or passing priority…</div>
+            </div>
+          )}
+
+          {(game.phase === 'awaiting_card_response' || game.phase === 'card_chain_complete') && (
+            <div className="space-y-3">
+              <ActiveSkillControls
+                phase={game.phase}
+                isOffense={isOffense}
+                team={game.teams[myIdx]}
+                used={myActiveSkillsUsed}
+                currentPlay={pendingMyScheme}
+                chain={activeCardChain}
+                onOffenseSkill={(group) => send(EVENTS.ACTIVE_SKILL, { group })}
+                onOffensePass={() => send(EVENTS.ACTIVE_SKILL_PASS)}
+                onDefenseSkill={(group) => send(EVENTS.DEF_ACTIVE_SKILL, { group })}
+                onDefensePass={() => send(EVENTS.DEF_ACTIVE_PASS)}
+              />
+              {game.phase === 'card_chain_complete' && isOffense && (
+                <button
+                  onClick={() => { initAudio(); send(EVENTS.SNAP); }}
+                  className="btn-flash btn-xtra btn-go w-full"
+                >
+                  ⚡ SNAP! ⚡
+                </button>
+              )}
+              {game.phase === 'card_chain_complete' && !isOffense && (
+                <div className="panel-flash text-center font-black animate-pulse">
+                  Quick Counter locked · offense snapping…
+                </div>
+              )}
             </div>
           )}
 
@@ -416,6 +461,8 @@ export default function Game({
         focusIdx={(rosterIdx ?? 0) as 0 | 1}
         onClose={() => setRosterIdx(null)}
         onSwitch={(idx) => setRosterIdx(idx)}
+        activeSkillsUsed={game.active_skills_used}
+        activeCardChain={activeCardChain}
       />
 
       {/* Phase 7: confetti rain on scoring plays */}

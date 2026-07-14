@@ -7,6 +7,7 @@ import type {
 } from './types.js';
 import { drawQBs } from './qb_pool.js';
 import { pickName } from './name_pools.js';
+import { activeSkillsForGroup } from './active_skills.js';
 
 const SKILL_GROUPS: PositionGroup[] = ['D_LINE', 'O_LINE', 'OFF_SKILL', 'DEF_SKILL', 'KICKER'];
 
@@ -73,6 +74,19 @@ export function generateDraft(rng: () => number): DraftPool {
     pool[g] = pairWithCap(rng, g);
   }
   pool.QB = drawQBs(rng, 3);
+  // Assign after the legacy pool is complete so adding cards does not change
+  // any existing seeded names, skills, or QB draws. Cards within a visible
+  // group are unique, forcing a real skill-versus-active draft decision.
+  for (const group of PICK_ORDER) {
+    const available = activeSkillsForGroup(group).map((skill) => skill.id);
+    for (let i = available.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [available[i], available[j]] = [available[j], available[i]];
+    }
+    pool[group].forEach((option, index) => {
+      option.active_skill = available[index];
+    });
+  }
   return pool;
 }
 

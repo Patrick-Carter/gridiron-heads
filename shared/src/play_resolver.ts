@@ -5,7 +5,7 @@
 // the outcome outright (blow-up or stuff). Below the threshold the line is
 // ignored (no rng calls — common plays stay seed-stable).
 import { mulberry32 } from './rng.js';
-import type { Play, PlayParent, QBModifier } from './types.js';
+import type { ActiveSkillId, Play, PlayParent, QBModifier } from './types.js';
 import { flipSubtype } from './types.js';
 
 export interface ResolveInput {
@@ -37,6 +37,9 @@ export interface ResolveInput {
   /** Current down. Optional so existing callers retain their prior behavior;
    *  required for `4th_down` QB modifiers to activate. */
   down?: 1 | 2 | 3 | 4;
+  distance?: number;
+  off_active_skill?: ActiveSkillId | null;
+  def_active_skill?: ActiveSkillId | null;
 }
 
 export interface ResolveOutput {
@@ -144,14 +147,31 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
     ? flipSubtype(input.off_play)
     : input.off_play;
   const defense_can_audible = !!input.off_audible || !!input.off_fake_audible;
-  const effective_def_play: Play =
+  let effective_def_play: Play =
     input.def_audible && defense_can_audible ? flipSubtype(input.def_play) : input.def_play;
+  const parent = effective_off_play.parent;
+  const offCard = input.off_active_skill ?? null;
+  const defCard = input.def_active_skill ?? null;
 
-  const parent_match = effective_off_play.parent === effective_def_play.parent;
-  const sub_match = effective_off_play.sub === effective_def_play.sub;
+  // Defensive read cards resolve first and move the defense into the exact
+  // call for their situation. Offensive deception cards can then degrade that
+  // read unless the defense used a card that suppressed them in the chain.
+  if ((defCard === 'crash_a_gap' && parent === 'run' && effective_off_play.sub === 'inside')
+    || (defCard === 'set_edge' && parent === 'run' && effective_off_play.sub === 'outside')
+    || (defCard === 'press_coverage' && parent === 'pass' && effective_off_play.sub === 'short')
+    || (defCard === 'two_high_shell' && parent === 'pass' && effective_off_play.sub === 'deep')
+    || (defCard === 'run_fits' && parent === 'run')) {
+    effective_def_play = { ...effective_off_play };
+  }
+  let parent_match = effective_off_play.parent === effective_def_play.parent;
+  let sub_match = effective_off_play.sub === effective_def_play.sub;
+  if (offCard === 'coverage_decoder' && parent_match && sub_match) sub_match = false;
+  if (offCard === 'misdirection' && parent_match) {
+    parent_match = false;
+    sub_match = false;
+  }
 
   // Skill roll (skip for punt/fg — handled separately or punt-specific logic)
-  const parent = effective_off_play.parent;
   let off_skill = input.off_skill;
   let def_skill = input.def_skill;
   if (parent === 'run' || parent === 'pass') {
@@ -176,13 +196,21 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
     offense_wins = false;
     defense_wins = false;
   } else {
+    const offAdvantage = offCard === 'field_general'
+      || (offCard === 'route_technician' && parent === 'pass')
+      || (offCard === 'cutback_artist' && parent === 'run');
     off_roll = Math.floor(rng() * (off_skill + 1));
+    if (offAdvantage) off_roll = Math.max(off_roll, Math.floor(rng() * (off_skill + 1)));
     def_roll = Math.floor(rng() * (def_skill + 1));
     if (!parent_match) {
       offense_wins = true;
     } else {
       if (off_roll > def_roll) offense_wins = true;
       else if (def_roll > off_roll) defense_wins = true;
+    }
+    if (offCard === 'matchup_nightmare') {
+      offense_wins = true;
+      defense_wins = false;
     }
   }
 
@@ -206,7 +234,14 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
     off_line_skill_eff = input.off_line_skill ?? 60;
     def_line_skill_eff = input.def_line_skill ?? 60;
     off_line_roll = Math.floor(rng() * (off_line_skill_eff + 1));
+    if (offCard === 'pancake_block'
+      || (offCard === 'pulling_guards' && parent === 'run' && effective_off_play.sub === 'outside')) {
+      off_line_roll = Math.max(off_line_roll, Math.floor(rng() * (off_line_skill_eff + 1)));
+    }
     def_line_roll = Math.floor(rng() * (def_line_skill_eff + 1));
+    if (defCard === 'pin_ears_back') {
+      def_line_roll = Math.max(def_line_roll, Math.floor(rng() * (def_line_skill_eff + 1)));
+    }
     if (off_line_roll !== def_line_roll) {
       const offense_line_won = off_line_roll > def_line_roll;
       line_winner = offense_line_won ? 'offense' : 'defense';
@@ -222,6 +257,10 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
       // line_regime stays null. The yardage tiers and recap treat this the
       // same as no line roll — common plays don't get a "lean" nudge.
     }
+  }
+  if (offCard === 'max_protect' && line_dominated_defense) {
+    line_dominated_defense = false;
+    line_regime = 'lean';
   }
   // ===========================================================================
 
@@ -262,6 +301,13 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
     parent,
     input.down,
   );
+  if (defCard === 'strip_rush' && parent_match) turnover_chance += 0.20;
+  if (defCard === 'ball_hawk' && parent === 'pass' && parent_match) turnover_chance += 0.25;
+  if (offCard === 'gunslinger' && parent === 'pass') turnover_chance += 0.10;
+  if (offCard === 'protect_football' || (offCard === 'sure_hands' && parent === 'pass')) {
+    turnover_chance = 0;
+  }
+  turnover_chance = Math.max(0, Math.min(1, turnover_chance));
 
   const turnover = rng() < turnover_chance;
 
@@ -319,6 +365,28 @@ export function resolvePlay(input: ResolveInput): ResolveOutput {
       }
     }
     yards = applyYardsPct(yards, input.qb_off_modifiers, parent, input.down);
+    // Quick Counter resolves the defensive response first, then the offense
+    // card. That ordering is visible when a cap and a gain bonus collide.
+    if (defCard === 'sure_tackling' && yards > 5) yards = 5;
+    if (defCard === 'collapse_pocket' && parent === 'pass') yards = -5;
+    if (defCard === 'crash_a_gap' && parent === 'run' && effective_off_play.sub === 'inside') yards = -4;
+    if (defCard === 'set_edge' && parent === 'run' && effective_off_play.sub === 'outside') yards = -4;
+    if (defCard === 'press_coverage' && parent === 'pass' && effective_off_play.sub === 'short') yards = Math.min(0, yards);
+    if (defCard === 'two_high_shell' && parent === 'pass' && effective_off_play.sub === 'deep') yards = Math.min(0, yards);
+    if (defCard === 'run_fits' && parent === 'run') yards = -2;
+    if (defCard === 'pin_ears_back' && parent === 'pass' && line_winner === 'defense') yards = Math.min(-3, yards);
+
+    if (offCard === 'gunslinger' && parent === 'pass') yards = Math.max(15, yards);
+    if (offCard === 'road_graders' && parent === 'run') yards = Math.max(10, yards);
+    if (offCard === 'pulling_guards' && parent === 'run'
+      && effective_off_play.sub === 'outside' && line_winner === 'offense') yards += 5;
+    if (offCard === 'breakaway_speed') yards = Math.max(15, yards);
+    if (offCard === 'clutch_command' && (input.down === 3 || input.down === 4)
+      && input.distance != null) yards = Math.max(input.distance, yards);
+    if (offCard === 'chain_mover' && yards > 0 && input.distance != null
+      && yards < input.distance && input.distance - yards <= 2) yards = input.distance;
+    if ((offCard === 'escape_artist'
+      || (offCard === 'clean_pocket' && parent === 'pass')) && yards < 0) yards = 0;
     // Cap yards at the remaining distance to the OFFENSE'S goal line so a play
     // can't produce an impossible gain (e.g., +20 from the 75-yard line when
     // attacking toward 100 → 25yds remaining; same for -1 direction at the 25

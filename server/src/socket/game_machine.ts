@@ -18,6 +18,8 @@ import {
   yardsToEndzone,
   kickoffYardline,
   SUB_OPTIONS_BY_PARENT,
+  activeSkillForTeamGroup,
+  activeSkillGroup,
 } from '@gridiron/shared';
 import type {
   GameState,
@@ -30,7 +32,14 @@ import type {
   QBOption,
   MatchOutcome,
   ShootoutAttempt,
+  ActiveSkillId,
 } from '@gridiron/shared';
+
+export interface ActiveCardChain {
+  offense: ActiveSkillId | null;
+  defense: ActiveSkillId | null;
+  suppressed: ActiveSkillId | null;
+}
 
 export interface RoomState {
   session_id: string;
@@ -53,6 +62,8 @@ export interface RoomState {
   audible_state: 'none' | 'awaiting_off_audible' | 'awaiting_def_audible';
   /** Sub-options for current audible choice */
   current_play: Play | null;
+  /** Public two-card Quick Counter chain for the current play/kick. */
+  active_card_chain: ActiveCardChain | null;
   /** Monotonic token used to invalidate stale auto-advance timers. */
   play_generation: number;
   /** Player id of the CPU opponent, when this is a vs-CPU room. null otherwise. */
@@ -88,6 +99,7 @@ export function newRoom(
     pending_schemes: {},
     audible_state: 'none',
     current_play: null,
+    active_card_chain: null,
     play_generation: 0,
     cpu_player_id: cpuId,
     last_activity_at: Date.now(),
@@ -289,6 +301,125 @@ export function audibleLimit(team: TeamState, kind: 'real' | 'fake'): number {
   return 1 + (modifier?.stat === stat ? modifier.value : 0);
 }
 
+function skillUsed(game: GameState, teamIdx: 0 | 1, skill: ActiveSkillId): boolean {
+  return game.active_skills_used[teamIdx]?.includes(skill) ?? false;
+}
+
+function spendSkill(game: GameState, teamIdx: 0 | 1, skill: ActiveSkillId): void {
+  if (!game.active_skills_used[teamIdx]) game.active_skills_used[teamIdx] = [];
+  game.active_skills_used[teamIdx].push(skill);
+}
+
+function defenseHasCardResponse(game: GameState): boolean {
+  const defIdx: 0 | 1 = game.possession_idx === 0 ? 1 : 0;
+  const team = game.teams[defIdx];
+  return (['D_LINE', 'DEF_SKILL'] as const).some((group) => {
+    const skill = activeSkillForTeamGroup(team, group);
+    return !!skill && !skillUsed(game, defIdx, skill);
+  });
+}
+
+function openDefensePriority(room: RoomState, play: Play): void {
+  const game = room.game!;
+  game.phase = (play.parent === 'run' || play.parent === 'pass') && defenseHasCardResponse(game)
+    ? 'awaiting_card_response'
+    : 'card_chain_complete';
+}
+
+/** Commit the offense's one card. The server derives the skill from the roster. */
+export function playActiveSkill(
+  room: RoomState,
+  player_id: string,
+  group: PositionGroup,
+): { ok: true; skill: ActiveSkillId } | { ok: false; reason: string } {
+  const game = room.game;
+  if (!game) return { ok: false, reason: 'no_game' };
+  const playerIdx = room.players.findIndex((player) => player.id === player_id);
+  if (playerIdx !== 0 && playerIdx !== 1) return { ok: false, reason: 'unknown_player' };
+  const idx = playerIdx as 0 | 1;
+
+  if (game.phase === 'shootout_ready') {
+    if (game.shootout?.next_kicker_idx !== idx) return { ok: false, reason: 'not_your_kick' };
+    if (group !== 'KICKER') return { ok: false, reason: 'card_not_eligible' };
+  } else {
+    if (game.phase !== 'ready_to_snap') return { ok: false, reason: 'not_ready_to_snap' };
+    if (idx !== game.possession_idx) return { ok: false, reason: 'not_offense' };
+    const play = room.pending_schemes[player_id];
+    if (!play) return { ok: false, reason: 'no_current_play' };
+    const allowed = play.parent === 'fg' || play.parent === 'punt'
+      ? group === 'KICKER'
+      : group === 'QB' || group === 'O_LINE' || group === 'OFF_SKILL';
+    if (!allowed) return { ok: false, reason: 'card_not_eligible' };
+  }
+
+  const skill = activeSkillForTeamGroup(game.teams[idx], group);
+  if (!skill) return { ok: false, reason: 'no_active_skill' };
+  if (game.phase === 'shootout_ready'
+    && skill !== 'big_leg' && skill !== 'ice_water' && skill !== 'friendly_upright') {
+    return { ok: false, reason: 'card_not_eligible' };
+  }
+  if (skillUsed(game, idx, skill)) return { ok: false, reason: 'active_skill_used' };
+  if (room.active_card_chain) return { ok: false, reason: 'card_already_played' };
+
+  spendSkill(game, idx, skill);
+  room.active_card_chain = { offense: skill, defense: null, suppressed: null };
+  if (game.phase !== 'shootout_ready') {
+    openDefensePriority(room, room.pending_schemes[player_id]);
+  }
+  return { ok: true, skill };
+}
+
+/** Offense declines to play a card and explicitly passes priority to defense. */
+export function passActiveSkill(
+  room: RoomState,
+  player_id: string,
+): { ok: true } | { ok: false; reason: string } {
+  const game = room.game;
+  if (!game) return { ok: false, reason: 'no_game' };
+  if (game.phase !== 'ready_to_snap') return { ok: false, reason: 'not_ready_to_snap' };
+  const playerIdx = room.players.findIndex((player) => player.id === player_id);
+  if (playerIdx !== game.possession_idx) return { ok: false, reason: 'not_offense' };
+  const play = room.pending_schemes[player_id];
+  if (!play) return { ok: false, reason: 'no_current_play' };
+  if (room.active_card_chain) return { ok: false, reason: 'card_already_played' };
+
+  room.active_card_chain = { offense: null, defense: null, suppressed: null };
+  openDefensePriority(room, play);
+  return { ok: true };
+}
+
+/** Commit or pass the defense's single response, then lock the play to Snap. */
+export function respondActiveSkill(
+  room: RoomState,
+  player_id: string,
+  group: 'D_LINE' | 'DEF_SKILL' | null,
+): { ok: true; skill: ActiveSkillId | null } | { ok: false; reason: string } {
+  const game = room.game;
+  if (!game || game.phase !== 'awaiting_card_response' || !room.active_card_chain) {
+    return { ok: false, reason: 'not_awaiting_card_response' };
+  }
+  const defIdx: 0 | 1 = game.possession_idx === 0 ? 1 : 0;
+  if (room.players[defIdx]?.id !== player_id) return { ok: false, reason: 'not_defense' };
+  if (group === null) {
+    game.phase = 'card_chain_complete';
+    return { ok: true, skill: null };
+  }
+  const skill = activeSkillForTeamGroup(game.teams[defIdx], group);
+  if (!skill) return { ok: false, reason: 'no_active_skill' };
+  if (skillUsed(game, defIdx, skill)) return { ok: false, reason: 'active_skill_used' };
+
+  spendSkill(game, defIdx, skill);
+  const chain = room.active_card_chain;
+  chain.defense = skill;
+  const offGroup = chain.offense ? activeSkillGroup(chain.offense) : null;
+  if ((skill === 'line_stunt' && offGroup === 'O_LINE')
+    || (skill === 'film_study' && (offGroup === 'QB' || offGroup === 'OFF_SKILL'))) {
+    chain.suppressed = chain.offense;
+  }
+  game.phase = 'card_chain_complete';
+  return { ok: true, skill };
+}
+
 export function endMatch(
   room: RoomState,
   winner_idx: 0 | 1,
@@ -377,12 +508,15 @@ export function resolveShootoutKick(
 
   const shootout = game.shootout;
   const team = game.teams[player_idx];
+  const committedCard = room.active_card_chain?.offense ?? null;
+  const activeCard = room.active_card_chain?.suppressed === committedCard ? null : committedCard;
   const qb_modifiers = team.qb ? [team.qb.modifier] : [];
   const fg = attemptFieldGoal({
     yards_to_endzone: shootout.distance,
     kicker_power: team.kicker?.skill ?? 70,
     seed,
     qb_modifiers,
+    active_skill: activeCard,
   });
   const attempt: ShootoutAttempt = {
     round: shootout.round,
@@ -409,6 +543,9 @@ export function resolveShootoutKick(
     off_audible: null,
     def_audible: null,
     off_fake_audible: false,
+    off_active_skill: committedCard,
+    def_active_skill: null,
+    suppressed_active_skill: room.active_card_chain?.suppressed ?? null,
     parent_match: false,
     sub_match: false,
     turnover: false,
@@ -444,6 +581,7 @@ export function resolveShootoutKick(
   shootout.attempts.push(attempt);
   game.history.push(result);
   game.last_play_seed = seed;
+  room.active_card_chain = null;
 
   const first = shootout.round_attempts[shootout.first_kicker_idx];
   const second_idx: 0 | 1 = shootout.first_kicker_idx === 0 ? 1 : 0;
@@ -502,6 +640,11 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   const off_audible: Play | null = (game as any)._pending_off_audible ?? null;
   const def_audible: Play | null = (game as any)._pending_def_audible ?? null;
   const off_fake_audible: boolean = !!(game as any)._pending_off_fake;
+  const cardChain = room.active_card_chain;
+  const committedOffCard = cardChain?.offense ?? null;
+  const committedDefCard = cardChain?.defense ?? null;
+  const activeOffCard = cardChain?.suppressed === committedOffCard ? null : committedOffCard;
+  const activeDefCard = cardChain?.suppressed === committedDefCard ? null : committedDefCard;
 
   const qb_off_mods = offense.qb ? [offense.qb.modifier] : [];
   const qb_def_mods = defense.qb ? [defense.qb.modifier] : [];
@@ -517,10 +660,12 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       kicker_power: power,
       seed,
       qb_modifiers: qb_off_mods,
+      active_skill: activeOffCard,
     });
     const parent_match = off_play.parent === def_play.parent;
     const sub_match = parent_match; // special teams have no meaningful subtype
-    const blocked = parent_match && mulberry32((seed ^ 0x4647424c) >>> 0)() < 0.25;
+    const blocked = activeOffCard !== 'perfect_hold'
+      && parent_match && mulberry32((seed ^ 0x4647424c) >>> 0)() < 0.25;
     const made = fg.make && !blocked;
     const result: PlayResult = {
       down: down_before,
@@ -532,6 +677,9 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       off_audible: null,
       def_audible: null,
       off_fake_audible: false,
+      off_active_skill: committedOffCard,
+      def_active_skill: committedDefCard,
+      suppressed_active_skill: cardChain?.suppressed ?? null,
       parent_match,
       sub_match,
       turnover: true,
@@ -594,10 +742,11 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
   if (off_play.parent === 'punt') {
     const parent_match = off_play.parent === def_play.parent;
     const sub_match = parent_match; // special teams have no meaningful subtype
-    const blocked = parent_match && mulberry32((seed ^ 0x50554e54) >>> 0)() < 0.25;
+    const blocked = activeOffCard !== 'quick_punt'
+      && parent_match && mulberry32((seed ^ 0x50554e54) >>> 0)() < 0.25;
     // Punt yardage: 30-50 yard kick (FORWARD in the offense's direction).
     const rng = mulberry32(seed);
-    const punt_yards = 30 + Math.floor(rng() * 21);
+    const punt_yards = 30 + Math.floor(rng() * 21) + (activeOffCard === 'coffin_corner' ? 10 : 0);
     const off_dir = offenseDirection(game);
     // Move ball forward from LOS in the offense's direction; clamp to field.
     const receivingFive = off_dir === 1 ? 95 : 5;
@@ -620,6 +769,9 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
       off_audible: null,
       def_audible: null,
       off_fake_audible: false,
+      off_active_skill: committedOffCard,
+      def_active_skill: committedDefCard,
+      suppressed_active_skill: cardChain?.suppressed ?? null,
       parent_match,
       sub_match,
       turnover: true,
@@ -686,6 +838,9 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     yardline_before,
     offense_direction,
     down: down_before,
+    distance: distance_before,
+    off_active_skill: activeOffCard,
+    def_active_skill: activeDefCard,
   });
   const adv = advanceAfterPlay(game, resolve.yards);
   let scoring_event: 'td' | 'safety' | null = null;
@@ -768,6 +923,9 @@ export function resolveCurrentPlay(room: RoomState, seed: number): {
     off_audible,
     def_audible,
     off_fake_audible,
+    off_active_skill: committedOffCard,
+    def_active_skill: committedDefCard,
+    suppressed_active_skill: cardChain?.suppressed ?? null,
     parent_match: resolve.parent_match,
     sub_match: resolve.sub_match,
     turnover: resolve.turnover || change_of_possession,
@@ -846,6 +1004,7 @@ function recapText(
 
 export function clearSchemes(room: RoomState): void {
   room.pending_schemes = {};
+  room.active_card_chain = null;
 }
 
 export function clearAudibles(game: GameState): void {
@@ -889,5 +1048,6 @@ export function snapshot(room: RoomState): any {
     game,
     outcome: room.outcome,
     pending_schemes,
+    active_card_chain: room.active_card_chain,
   };
 }

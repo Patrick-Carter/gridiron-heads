@@ -168,11 +168,18 @@ describe('2-player end-to-end flow', () => {
     const readyState = await waitFor(host, 'session:state', (s) => s.game?.phase === 'ready_to_snap');
     expect(readyState.game.phase).toBe('ready_to_snap');
 
-    // Snap the ball
-    const playResultPromise = waitFor(host, 'play:result');
     const offenseId = gameState.players[gameState.game.possession_idx].id;
     const offenseSocket = offenseId === hostPlayerId ? host : guest;
     const defenseSocket = offenseId === hostPlayerId ? guest : host;
+    const defensePriorityPromise = waitFor(host, 'session:state', (s) => s.game?.phase === 'awaiting_card_response');
+    offenseSocket.emit('game:active_skill_pass');
+    await defensePriorityPromise;
+    const chainCompletePromise = waitFor(host, 'session:state', (s) => s.game?.phase === 'card_chain_complete');
+    defenseSocket.emit('game:def_active_pass');
+    await chainCompletePromise;
+
+    // Snap the ball after both players pass card priority.
+    const playResultPromise = waitFor(host, 'play:result');
     const wrongRolePromise = waitFor(defenseSocket, 'session:error');
     defenseSocket.emit('game:snap');
     expect((await wrongRolePromise).error).toBe('not_offense');

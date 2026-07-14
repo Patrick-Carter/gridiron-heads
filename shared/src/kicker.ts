@@ -3,13 +3,14 @@
 // bonus_roll: [0, 20] — universal, no scaling
 // make iff power_roll + bonus_roll > yards_to_endzone
 import { mulberry32 } from './rng.js';
-import type { QBModifier } from './types.js';
+import type { ActiveSkillId, QBModifier } from './types.js';
 
 export interface FGAttempt {
   yards_to_endzone: number;
   kicker_power: number; // 50..100
   seed: number;
   qb_modifiers?: QBModifier[];
+  active_skill?: ActiveSkillId | null;
 }
 
 export interface FGResult {
@@ -26,6 +27,7 @@ export function attemptFieldGoal({
   kicker_power,
   seed,
   qb_modifiers = [],
+  active_skill = null,
 }: FGAttempt): FGResult {
   let power = kicker_power;
   for (const m of qb_modifiers) {
@@ -33,15 +35,25 @@ export function attemptFieldGoal({
       power = Math.round(power * (1 + m.value / 100));
     }
   }
+  if (active_skill === 'big_leg') power += 20;
   power = Math.max(1, Math.min(100, power));
 
   const rng = mulberry32(seed);
-  const power_roll = Math.floor(rng() * (power + 1)); // [0, power]
-  const bonus_roll = Math.floor(rng() * 21); // [0, 20]
+  let power_roll = Math.floor(rng() * (power + 1)); // [0, power]
+  if (active_skill === 'ice_water') {
+    power_roll = Math.max(power_roll, Math.floor(rng() * (power + 1)));
+  }
+  let bonus_roll = Math.floor(rng() * 21); // [0, 20]
+  if (active_skill === 'friendly_upright') {
+    bonus_roll = Math.max(bonus_roll, Math.floor(rng() * 21));
+  }
   const total = power_roll + bonus_roll;
+  const make = active_skill === 'friendly_upright'
+    ? total >= yards_to_endzone
+    : total > yards_to_endzone;
 
   return {
-    make: total > yards_to_endzone,
+    make,
     power_roll,
     bonus_roll,
     total,

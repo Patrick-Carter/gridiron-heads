@@ -6,6 +6,32 @@ import { modifierDescription } from '@gridiron/shared';
 import FlashHeader from '../components/FlashHeader.js';
 import { initAudio, playDraftPick } from '../audio/synth.js';
 import ConcedeControl from '../components/ConcedeControl.js';
+import { ActiveSkillDetails } from '../components/ActiveSkillCard.js';
+
+function DraftOptionDetails({
+  option,
+  heading,
+  headingClass = 'text-ink',
+}: {
+  option: any;
+  heading?: string;
+  headingClass?: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className={`font-bold ${headingClass}`}>{heading ? `${heading}: ` : ''}{option.name}</div>
+      {option.skill != null && (
+        <div className="text-[10px] text-ink/70">skill {option.skill}</div>
+      )}
+      {option.modifier && (
+        <div className="text-maroon text-[10px]">
+          ✦ {modifierDescription(option.modifier)}
+        </div>
+      )}
+      {option.active_skill && <ActiveSkillDetails skillId={option.active_skill} compact />}
+    </div>
+  );
+}
 
 export default function Draft({
   state,
@@ -127,32 +153,17 @@ export default function Draft({
                 {myPickHere && (
                   <div className="border-3 border-ink bg-lime/30 p-2 text-xs"
                        style={{ borderWidth: 3, borderColor: '#0a0a18', background: '#c8ff0033' }}>
-                    <div className="font-bold text-ink">YOU: {myPickHere.name}</div>
-                    {myPickHere.skill != null && (
-                      <div className="text-ink/70">skill {myPickHere.skill}</div>
-                    )}
-                    {myPickHere.modifier && (
-                      <div className="text-maroon text-[10px] mt-1">
-                        ✦ {modifierDescription(myPickHere.modifier)}
-                      </div>
-                    )}
+                    <DraftOptionDetails option={myPickHere} heading="YOU" />
                   </div>
                 )}
                 {oppPickHere && (
                   <div className="border-3 border-ink bg-maroon/15 p-2 text-xs"
                        style={{ borderWidth: 3, borderColor: '#0a0a18', background: '#c8102e22' }}>
-                    <div className="font-bold text-maroon flex items-center gap-1">
-                      {opponentIsCpu && <span className="sticker !text-[10px]">🤖</span>}
-                      OPP: {oppPickHere.name}
-                    </div>
-                    {oppPickHere.skill != null && (
-                      <div className="text-ink/70">skill {oppPickHere.skill}</div>
-                    )}
-                    {oppPickHere.modifier && (
-                      <div className="text-maroon text-[10px] mt-1">
-                        ✦ {modifierDescription(oppPickHere.modifier)}
-                      </div>
-                    )}
+                    <DraftOptionDetails
+                      option={oppPickHere}
+                      heading={`${opponentIsCpu ? '🤖 ' : ''}OPP`}
+                      headingClass="text-maroon"
+                    />
                   </div>
                 )}
 
@@ -170,15 +181,7 @@ export default function Draft({
                         }`}
                         style={{ borderColor: '#0a0a18' }}
                       >
-                        <div className="font-bold">{opt.name}</div>
-                        {opt.skill != null && (
-                          <div className="text-[10px] opacity-70">skill {opt.skill}</div>
-                        )}
-                        {opt.modifier && (
-                          <div className="text-maroon text-[10px] mt-0.5">
-                            ✦ {modifierDescription(opt.modifier)}
-                          </div>
-                        )}
+                        <DraftOptionDetails option={opt} />
                       </button>
                     ))}
                   </div>

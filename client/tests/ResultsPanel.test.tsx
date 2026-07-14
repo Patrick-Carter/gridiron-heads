@@ -199,4 +199,21 @@ describe('ResultsPanel — verdict + result', () => {
     render(<ResultsPanel playResult={{ ...basePlayResult, play_outcome }} progress={1} />);
     expect(screen.getByTestId('roll-verdict').textContent).toContain(label);
   });
+
+  it('shows played and suppressed Quick Counter chips', () => {
+    render(
+      <ResultsPanel
+        playResult={{
+          ...basePlayResult,
+          off_active_skill: 'pancake_block',
+          def_active_skill: 'line_stunt',
+          suppressed_active_skill: 'pancake_block',
+        }}
+        progress={1}
+      />,
+    );
+    expect(screen.getByTestId('result-active-skills')).toBeTruthy();
+    expect(screen.getByText(/OFF: Pancake Block · SUPPRESSED/i)).toBeTruthy();
+    expect(screen.getByText(/DEF: Line Stunt/i)).toBeTruthy();
+  });
 });

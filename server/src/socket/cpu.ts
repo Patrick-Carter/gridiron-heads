@@ -35,6 +35,9 @@ import {
   resolveShootoutKick,
   nextActionPhase,
   endMatch,
+  playActiveSkill,
+  passActiveSkill,
+  respondActiveSkill,
 } from './game_machine.js';
 import { touchRoom } from '../rooms.js';
 // Note: cpu.ts is a leaf — only handlers.ts imports it. No circular deps.
@@ -47,6 +50,8 @@ import { touchRoom } from '../rooms.js';
 const OFFENSE_AUDIBLE_CHANCE = 0.35;
 const OFFENSE_FAKE_AUDIBLE_CHANCE = 0.25;
 const DEFENSE_RESPOND_AUDIBLE_CHANCE = 0.60;
+const OFFENSE_ACTIVE_CHANCE = 0.45;
+const DEFENSE_ACTIVE_CHANCE = 0.65;
 const RUN_PASS_RUN_RATIO = 0.60; // 60% run, 40% pass on neutral downs
 // Yards-to-endzone thresholds (relative to offense's target end zone).
 const FG_RANGE_YARDS = 35;       // inside own 35 (or opp 65) → consider FG on 4th
@@ -85,7 +90,8 @@ export function cpuDraftPick(room: RoomState): void {
     const pool = room.draft.pool.QB as QBOption[];
     if (pool.length === 0) return;
     const best = pool.reduce((acc, option) =>
-      option.modifier.value > acc.modifier.value ? option : acc,
+      option.modifier.value + activeDraftValue(option.active_skill)
+        > acc.modifier.value + activeDraftValue(acc.active_skill) ? option : acc,
     );
     draftPick(room, CPU_PLAYER_ID, 'QB', best.id);
     return;
@@ -96,7 +102,8 @@ export function cpuDraftPick(room: RoomState): void {
   for (const group of PICK_ORDER) {
     if (group === 'QB' || groupPicked(team, group)) continue;
     for (const option of room.draft.pool[group] as PositionOption[]) {
-      if (!bestPlayer || option.skill > bestPlayer.skill) {
+      if (!bestPlayer || option.skill + activeDraftValue(option.active_skill)
+        > bestPlayer.skill + activeDraftValue(bestPlayer.active_skill)) {
         bestGroup = group;
         bestPlayer = option;
       }
@@ -106,6 +113,18 @@ export function cpuDraftPick(room: RoomState): void {
   if (bestGroup && bestPlayer) {
     draftPick(room, CPU_PLAYER_ID, bestGroup, bestPlayer.id);
   }
+}
+
+/** Small enough that raw skill still matters, large enough to break close picks. */
+export function activeDraftValue(skill: PositionOption['active_skill'] | QBOption['active_skill']): number {
+  if (!skill) return 0;
+  if (skill === 'protect_football' || skill === 'sure_hands' || skill === 'film_study'
+    || skill === 'line_stunt' || skill === 'perfect_hold') return 9;
+  if (skill === 'field_general' || skill === 'pancake_block' || skill === 'pin_ears_back'
+    || skill === 'sure_tackling' || skill === 'ice_water') return 8;
+  if (skill === 'big_leg' || skill === 'breakaway_speed' || skill === 'matchup_nightmare'
+    || skill === 'strip_rush' || skill === 'ball_hawk') return 7;
+  return 5;
 }
 
 function groupPicked(team: TeamState, group: PositionGroup): boolean {
@@ -248,6 +267,68 @@ export function cpuRespondAudible(room: RoomState, playerIdx: 0 | 1): 'audible' 
   return 'stay';
 }
 
+function cardFitsPlay(skill: string, play: Play): boolean {
+  if (skill === 'gunslinger' || skill === 'route_technician' || skill === 'sure_hands'
+    || skill === 'clean_pocket') return play.parent === 'pass';
+  if (skill === 'cutback_artist' || skill === 'road_graders') return play.parent === 'run';
+  if (skill === 'pulling_guards') return play.parent === 'run' && play.sub === 'outside';
+  if (skill === 'crash_a_gap') return play.parent === 'run' && play.sub === 'inside';
+  if (skill === 'set_edge') return play.parent === 'run' && play.sub === 'outside';
+  if (skill === 'collapse_pocket' || skill === 'ball_hawk') return play.parent === 'pass';
+  if (skill === 'press_coverage') return play.parent === 'pass' && play.sub === 'short';
+  if (skill === 'two_high_shell') return play.parent === 'pass' && play.sub === 'deep';
+  if (skill === 'run_fits') return play.parent === 'run';
+  if (skill === 'clutch_command') return false; // handled with the current down below
+  if (skill === 'coffin_corner' || skill === 'quick_punt') return play.parent === 'punt';
+  if (skill === 'big_leg' || skill === 'ice_water' || skill === 'perfect_hold'
+    || skill === 'friendly_upright') return play.parent === 'fg';
+  return true;
+}
+
+export function cpuMaybePlayActive(room: RoomState, playerIdx: 0 | 1): boolean {
+  const game = room.game;
+  if (!game || game.phase !== 'ready_to_snap' || game.possession_idx !== playerIdx) return false;
+  if (room.players[playerIdx]?.id !== CPU_PLAYER_ID) return false;
+  const play = room.pending_schemes[CPU_PLAYER_ID];
+  if (!play) return false;
+  const team = game.teams[playerIdx];
+  const groups: PositionGroup[] = play.parent === 'punt' || play.parent === 'fg'
+    ? ['KICKER']
+    : ['QB', 'O_LINE', 'OFF_SKILL'];
+  const candidates = groups.filter((group) => {
+    const option = group === 'QB' ? team.qb
+      : group === 'O_LINE' ? team.o_line
+        : group === 'OFF_SKILL' ? team.off_skill : team.kicker;
+    const skill = option?.active_skill;
+    if (!skill || game.active_skills_used[playerIdx]?.includes(skill)) return false;
+    if (skill === 'clutch_command') return game.down === 3 || game.down === 4;
+    return cardFitsPlay(skill, play);
+  });
+  if (!candidates.length) return false;
+  const lateGame = game.possessions_completed[playerIdx] >= 2;
+  if (!lateGame && Math.random() >= OFFENSE_ACTIVE_CHANCE) return false;
+  const group = candidates[Math.floor(Math.random() * candidates.length)];
+  return playActiveSkill(room, CPU_PLAYER_ID, group).ok;
+}
+
+export function cpuRespondActive(room: RoomState, playerIdx: 0 | 1): boolean {
+  const game = room.game;
+  if (!game || game.phase !== 'awaiting_card_response') return false;
+  if (room.players[playerIdx]?.id !== CPU_PLAYER_ID) return false;
+  const offenseId = room.players[game.possession_idx]?.id;
+  const play = offenseId ? room.pending_schemes[offenseId] : undefined;
+  const team = game.teams[playerIdx];
+  const candidates = (['D_LINE', 'DEF_SKILL'] as const).filter((group) => {
+    const skill = group === 'D_LINE' ? team.d_line?.active_skill : team.def_skill?.active_skill;
+    return !!skill && !game.active_skills_used[playerIdx]?.includes(skill)
+      && (!play || cardFitsPlay(skill, play));
+  });
+  const shouldPlay = candidates.length > 0 && Math.random() < DEFENSE_ACTIVE_CHANCE;
+  if (!shouldPlay) return respondActiveSkill(room, CPU_PLAYER_ID, null).ok;
+  const group = candidates[Math.floor(Math.random() * candidates.length)];
+  return respondActiveSkill(room, CPU_PLAYER_ID, group).ok;
+}
+
 // ---------------------------------------------------------------------------
 // CPU snap — mirrors the socket handler's snap logic exactly. Reuses
 // resolveCurrentPlay + the 2s/4.5s auto-advance setTimeouts. Refuses to
@@ -256,7 +337,7 @@ export function cpuRespondAudible(room: RoomState, playerIdx: 0 | 1): 'audible' 
 export function cpuSnap(io: IOServer, room: RoomState): void {
   const game = room.game;
   if (!game) return;
-  if (game.phase !== 'ready_to_snap') return;
+  if (game.phase !== 'card_chain_complete') return;
 
   const sid = room.session_id;
   const seed = Math.floor(Math.random() * 2 ** 32);
@@ -363,6 +444,12 @@ export function tickCpu(io: IOServer, room: RoomState, depth = 0): void {
   const phase = game.phase;
 
   if (phase === 'shootout_ready' && game.shootout?.next_kicker_idx === cpuIdx) {
+    const kickerSkill = game.teams[cpuIdx].kicker?.active_skill;
+    if (kickerSkill && (kickerSkill === 'big_leg' || kickerSkill === 'ice_water'
+      || kickerSkill === 'friendly_upright')
+      && !game.active_skills_used[cpuIdx]?.includes(kickerSkill)) {
+      playActiveSkill(room, CPU_PLAYER_ID, 'KICKER');
+    }
     cpuShootoutKick(io, room, cpuIdx as 0 | 1);
     return;
   }
@@ -408,11 +495,15 @@ export function tickCpu(io: IOServer, room: RoomState, depth = 0): void {
         tickCpu(io, room, depth + 1);
         return;
       }
-      // No audible chosen — CPU snaps immediately.
-      cpuSnap(io, room);
-      // cpuSnap broadcasts play:result + session:state internally + arms
-      // auto-advance setTimeouts. No need to recurse; the next tickCpu
-      // happens via the 4.5s auto-advance handler.
+      if (cpuMaybePlayActive(room, offIdx)) {
+        broadcast();
+        tickCpu(io, room, depth + 1);
+        return;
+      }
+      // Offense explicitly passes priority so defense can still play a card.
+      passActiveSkill(room, CPU_PLAYER_ID);
+      broadcast();
+      tickCpu(io, room, depth + 1);
       return;
     }
     // CPU is defense → wait for human offense to snap.
@@ -432,6 +523,21 @@ export function tickCpu(io: IOServer, room: RoomState, depth = 0): void {
       tickCpu(io, room, depth + 1);
     }
     return;
+  }
+
+
+  if (phase === 'awaiting_card_response') {
+    const defIdx = game.possession_idx === 0 ? 1 : 0;
+    if (room.players[defIdx].id === room.cpu_player_id) {
+      cpuRespondActive(room, defIdx);
+      broadcast();
+      tickCpu(io, room, depth + 1);
+    }
+    return;
+  }
+
+  if (phase === 'card_chain_complete' && room.players[game.possession_idx].id === room.cpu_player_id) {
+    cpuSnap(io, room);
   }
 }
 

@@ -5,7 +5,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { getSocket, EVENTS } from '../api/socket.js';
 import type { Socket } from 'socket.io-client';
-import type { GameState, MatchOutcome, PlayResult } from '@gridiron/shared';
+import type { ActiveSkillId, GameState, MatchOutcome, PlayResult } from '@gridiron/shared';
 
 export interface SessionSnapshot {
   session_id: string;
@@ -16,6 +16,11 @@ export interface SessionSnapshot {
   game?: GameState | null;
   outcome?: MatchOutcome | null;
   pending_schemes?: Record<string, any>;
+  active_card_chain?: {
+    offense: ActiveSkillId | null;
+    defense: ActiveSkillId | null;
+    suppressed: ActiveSkillId | null;
+  } | null;
 }
 
 export interface PlayResultMsg {

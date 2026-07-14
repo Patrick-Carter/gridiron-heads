@@ -1,4 +1,12 @@
-import type { ShootoutState } from '@gridiron/shared';
+import type { ActiveSkillId, ShootoutState } from '@gridiron/shared';
+import { ActiveSkillChain, ActiveSkillDetails } from './ActiveSkillCard.js';
+import type { ActiveCardChain } from './ActiveSkillCard.js';
+
+const FG_ACTIVE_SKILLS = new Set<ActiveSkillId>([
+  'big_leg',
+  'ice_water',
+  'friendly_upright',
+]);
 
 export default function ShootoutPanel({
   shootout,
@@ -6,14 +14,28 @@ export default function ShootoutPanel({
   myIdx,
   ready,
   onKick,
+  kickerActiveSkill = null,
+  kickerActiveSkillUsed = false,
+  activeCardChain = null,
+  onActiveSkill,
 }: {
   shootout: ShootoutState;
   players: { name: string }[];
   myIdx: 0 | 1;
   ready: boolean;
   onKick: () => void;
+  kickerActiveSkill?: ActiveSkillId | null;
+  kickerActiveSkillUsed?: boolean;
+  activeCardChain?: ActiveCardChain | null;
+  onActiveSkill?: () => void;
 }) {
   const myKick = shootout.next_kicker_idx === myIdx;
+  const canPlayKickerCard = ready
+    && myKick
+    && !!kickerActiveSkill
+    && FG_ACTIVE_SKILLS.has(kickerActiveSkill)
+    && !kickerActiveSkillUsed
+    && !activeCardChain;
   return (
     <div className="panel-flash text-center space-y-3" data-testid="shootout-panel">
       <div className="panel-titlebar !mt-0">
@@ -36,6 +58,18 @@ export default function ShootoutPanel({
           );
         })}
       </div>
+      {activeCardChain && <ActiveSkillChain chain={activeCardChain} complete solo />}
+      {canPlayKickerCard && kickerActiveSkill && (
+        <button
+          type="button"
+          className="block w-full text-left hover:-translate-y-0.5 transition-transform"
+          onClick={onActiveSkill}
+          aria-label="Play kicker active skill"
+        >
+          <div className="text-[10px] font-black mb-0.5">OPTIONAL QUICK COUNTER</div>
+          <ActiveSkillDetails skillId={kickerActiveSkill} status="ready" compact />
+        </button>
+      )}
       {ready && myKick && (
         <button type="button" className="btn-flash btn-xtra btn-go w-full" onClick={onKick}>
           Kick {shootout.distance}-Yard FG
